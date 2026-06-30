@@ -729,6 +729,7 @@
           <option value="">全部分類</option>
         </select>
         <button class="btn primary" id="addBtn">＋ 新增商品</button>
+        <button class="btn cam" id="addCamBtn">📷 掃碼新增</button>
         <button class="btn" id="saveAllStock">一鍵儲存庫存</button>
         <button class="btn danger" id="clearAll">清空商品</button>
       </div>
@@ -1321,6 +1322,7 @@
 <div class="modal-bg" id="modalBg">
   <div class="modal">
     <h3 id="modalTitle">新增商品</h3>
+    <div class="field"><label>商品編號／條碼</label><input id="m_code" placeholder="留空＝系統自動產生（或掃描既有條碼）"><div class="hint" id="m_codeHint" style="margin-top:4px">留空會依分類自動編號；若要用商品本身的條碼，可直接填或用「掃碼新增」帶入。</div></div>
     <div class="field"><label>商品名稱</label><input id="m_name" placeholder="例：咖啡蕾絲款"></div>
     <div class="field"><label>分類</label>
       <div style="display:flex;gap:8px;align-items:center">
@@ -1578,11 +1580,11 @@ function nextCode(catName){
 /* ============================================================
    新增 / 匯入
 ============================================================ */
-function addProduct({name, category, base, price, stock, cost, promoType, bulkQty, bulkPrice, secondPercent, bogoBuy, bogoFree, consignor, consignRate, variants}){
+function addProduct({name, category, base, price, stock, cost, promoType, bulkQty, bulkPrice, secondPercent, bogoBuy, bogoFree, consignor, consignRate, variants, code}){
   category = catExists(category) ? category : fallbackCat();
   base = Number(base)||0;
   const p = {
-    code: nextCode(category),
+    code: (code && String(code).trim()) ? String(code).trim() : nextCode(category),
     name: String(name||"未命名").trim(),
     category,
     base,
@@ -2949,8 +2951,23 @@ function onCamScan(text){
       return;
     }
   }
+  if(camMode==="newitem"){
+    const rr=resolveCode(code);
+    beep(true); if(navigator.vibrate) navigator.vibrate(50);
+    fb.style.borderColor="rgba(120,220,170,.55)"; fb.classList.add("show");
+    if(rr){
+      const pcode=rr.product.code;
+      $("#camFbName").textContent="✓ 已建檔："+rr.product.name; $("#camFbPrice").textContent="開啟編輯…";
+      $("#camStatus").textContent="此條碼已建檔，開啟編輯";
+      setTimeout(()=>{ closeCamera(); openModal(pcode); }, 650);
+    }else{
+      $("#camFbName").textContent="＋ 新商品條碼"; $("#camFbPrice").textContent=code;
+      $("#camStatus").textContent="帶入「新增商品」，請填寫名稱與價格";
+      setTimeout(()=>{ closeCamera(); openModal(null, code); }, 650);
+    }
+    return;
+  }
   const r=resolveCode(code);
-  const needPick = r && hasVariants(r.product) && !r.variant;
   if(r && !needPick){
     const p=r.product, v=r.variant;
     const dispName=v?(p.name+"（"+v.vname+"）"):p.name;
@@ -2982,9 +2999,9 @@ function onCamScan(text){
 async function openCamera(mode){
   camMode = (typeof mode==="string") ? mode : "sale";
   if(typeof Html5Qrcode==="undefined"){ toast("掃描元件未載入，請確認網路後重新整理"); return; }
-  const titles={sale:"相機掃描結帳",purchase:"相機掃描進貨",return:"相機掃描退貨",kiosk:"相機掃描查價",retref:"掃描收據單號"};
+  const titles={sale:"相機掃描結帳",purchase:"相機掃描進貨",return:"相機掃描退貨",kiosk:"相機掃描查價",retref:"掃描收據單號",newitem:"掃碼新增商品"};
   if($("#camTitle")) $("#camTitle").textContent = titles[camMode] || "相機掃描";
-  const tallyWrap=$("#camTally"); if(tallyWrap) tallyWrap.style.display = (camMode==="retref")?"none":"block";
+  const tallyWrap=$("#camTally"); if(tallyWrap) tallyWrap.style.display = (camMode==="retref"||camMode==="newitem")?"none":"block";
   $("#camModal").classList.add("show");
   $("#camFeedback").classList.remove("show");
   $("#camStatus").textContent="正在啟動相機…";
@@ -4420,6 +4437,7 @@ function bindEvents(){
   });
   $("#gbBatches").addEventListener("click",e=>{ if(e.target.classList.contains("gb-undo")) gbUndoBatch(e.target.dataset.batch); });
   $("#soCamBtn").addEventListener("click",()=>openCamera("sale"));
+  $("#addCamBtn").addEventListener("click",()=>openCamera("newitem"));
   $("#poCamBtn").addEventListener("click",()=>openCamera("purchase"));
   $("#retCamBtn").addEventListener("click",()=>openCamera("return"));
   $("#kioskCamBtn").addEventListener("click",()=>openCamera("kiosk"));
@@ -4591,12 +4609,15 @@ function syncVariantTotal(){
     else { note.style.display="none"; }
   }
 }
-function openModal(code){
+function openModal(code, presetCode){
   editingCode = code;
   const isEdit = !!code;
   $("#modalTitle").textContent = isEdit ? "編輯商品" : "新增商品";
+  const codeInput=$("#m_code");
   if(isEdit){
     const p = state.products.find(x=>x.code===code);
+    if(codeInput){ codeInput.value=p.code; codeInput.disabled=true; }
+    if($("#m_codeHint")) $("#m_codeHint").textContent="編號建立後不可更改（已用於銷售紀錄）。";
     $("#m_name").value=p.name; $("#m_cat").value=p.category;
     $("#m_base").value=p.base; $("#m_price").value=p.price;
     $("#m_stock").value=p.stock||0; $("#m_cost").value=p.cost||0;
@@ -4607,6 +4628,8 @@ function openModal(code){
     refreshConsignorOptions(p.consignor||""); $("#m_consignRate").value=(p.consignRate||p.consignRate===0)?(p.consignRate||""):"";
     modalVariants = Array.isArray(p.variants) ? p.variants.map(v=>({vname:v.vname, code:v.code, stock:parseInt(v.stock)||0})) : [];
   }else{
+    if(codeInput){ codeInput.disabled=false; codeInput.value=presetCode?String(presetCode).trim():""; }
+    if($("#m_codeHint")) $("#m_codeHint").textContent="留空會依分類自動編號；若要用商品本身的條碼，可直接填或用「掃碼新增」帶入。";
     $("#m_name").value=""; $("#m_cat").value="雜貨";
     $("#m_base").value=""; $("#m_price").value=""; $("#m_price").placeholder="自動計算";
     $("#m_stock").value=""; $("#m_cost").value="";
@@ -4673,7 +4696,15 @@ function saveModal(){
     p.variants=vrows;
     if(hasV) recomputeStock(p); else p.stock=stock;
   }else{
-    addProduct({name,category:cat,base,price:priceVal,stock,cost,promoType,bulkQty,bulkPrice,secondPercent,bogoBuy,bogoFree,consignor,consignRate,variants:vrows});
+    let customCode = $("#m_code") ? $("#m_code").value.trim() : "";
+    if(customCode){
+      const lc=customCode.toLowerCase();
+      for(const other of state.products){
+        if(other.code.toLowerCase()===lc){ toast("編號「"+customCode+"」已被商品「"+other.name+"」使用"); return; }
+        if(hasVariants(other) && other.variants.some(ov=>String(ov.code||"").toLowerCase()===lc)){ toast("編號「"+customCode+"」與其他商品的變體條碼重複"); return; }
+      }
+    }
+    addProduct({name,category:cat,base,price:priceVal,stock,cost,promoType,bulkQty,bulkPrice,secondPercent,bogoBuy,bogoFree,consignor,consignRate,variants:vrows,code:customCode});
   }
   saveState(); renderAll(); closeModal();
   toast(editingCode?"已更新":"已新增商品");
