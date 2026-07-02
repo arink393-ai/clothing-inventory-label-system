@@ -799,6 +799,33 @@
       </div>
       <p class="hint" style="margin-top:8px">變更後立即生效，下次登入請使用新密碼。密碼會隨「備份」一起保存。</p>
     </div>
+
+    <div class="panel">
+      <h2><span class="num">AI</span>拍照辨識設定（Gemini）</h2>
+      <p class="sub">設定後，新增商品時可用「📷 拍照命名」自動辨識商品、帶入名稱與介紹。需要一組 Google Gemini 免費 API 金鑰（在 Google AI Studio 免費申請）。金鑰只存在本機瀏覽器，會隨備份保存。</p>
+      <div class="settings">
+        <div class="field" style="flex:1;min-width:200px"><label>Gemini API 金鑰</label><input id="setGeminiKey" type="text" autocomplete="off" placeholder="貼上 AI...金鑰"></div>
+        <div class="field"><label>模型（進階，可不改）</label><input id="setGeminiModel" type="text" autocomplete="off" style="width:190px" placeholder="gemini-flash-latest"></div>
+        <button class="btn primary" id="saveGemini">儲存 AI 設定</button>
+      </div>
+      <p class="hint" style="margin-top:8px">申請網址：aistudio.google.com/app/apikey（登入 Google 帳號 → Create API key）。免費額度足夠一般建檔使用。</p>
+    </div>
+
+    <div class="panel">
+      <h2><span class="num">同步</span>多裝置雲端同步（手機／電腦共用）</h2>
+      <p class="sub">設定後，手機與電腦會透過雲端資料庫共用同一份資料——手機建檔、電腦結帳都看得到。需要一組免費 Supabase 專案。狀態：<b id="syncStatus" style="color:var(--muted)">未連線</b></p>
+      <div class="settings">
+        <div class="field" style="flex:1;min-width:200px"><label>Supabase 專案網址</label><input id="syncUrl" type="text" autocomplete="off" placeholder="https://xxxx.supabase.co"></div>
+        <div class="field" style="flex:1;min-width:200px"><label>API 金鑰（anon / publishable）</label><input id="syncKey" type="text" autocomplete="off" placeholder="sb_publishable_... 或 eyJ..."></div>
+      </div>
+      <div class="settings">
+        <div class="field" style="flex:1;min-width:160px"><label>同步帳號（Email）</label><input id="syncEmail" type="text" autocomplete="off" placeholder="shop@example.com"></div>
+        <div class="field" style="flex:1;min-width:160px"><label>同步密碼</label><input id="syncPass" type="password" autocomplete="off" placeholder="Supabase 使用者密碼"></div>
+        <button class="btn primary" id="syncConnect">連線並同步</button>
+        <button class="btn" id="syncDisconnect">停用</button>
+      </div>
+      <p class="hint" style="margin-top:8px">每台裝置都要填一次同樣的設定。金鑰與密碼只存在本機、不會寫進網頁程式，也不會同步到雲端。建立資料表的步驟我會另外提供。</p>
+    </div>
   </section>
 
   <!-- ============ 進貨 ============ -->
@@ -1323,7 +1350,15 @@
   <div class="modal">
     <h3 id="modalTitle">新增商品</h3>
     <div class="field"><label>商品編號／條碼</label><input id="m_code" placeholder="留空＝系統自動產生（或掃描既有條碼）"><div class="hint" id="m_codeHint" style="margin-top:4px">留空會依分類自動編號；若要用商品本身的條碼，可直接填或用「掃碼新增」帶入。</div></div>
-    <div class="field"><label>商品名稱</label><input id="m_name" placeholder="例：咖啡蕾絲款"></div>
+    <div class="field"><label>商品名稱</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="m_name" placeholder="例：咖啡蕾絲款" style="flex:1">
+        <button type="button" class="btn sm" id="m_photoBtn" title="拍照或選圖，AI 自動命名">📷 拍照命名</button>
+      </div>
+      <input type="file" id="m_photoInput" accept="image/*" capture="environment" style="display:none">
+      <div class="hint" id="m_photoHint" style="margin-top:4px;display:none"></div>
+    </div>
+    <div class="field"><label>商品介紹／備註（可空，可之後補）</label><textarea id="m_desc" rows="2" placeholder="材質、尺寸、特色…（拍照命名時會一併帶入，可再修改）"></textarea></div>
     <div class="field"><label>分類</label>
       <div style="display:flex;gap:8px;align-items:center">
         <select id="m_cat" style="flex:1"></select>
@@ -1362,6 +1397,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn ghost" id="m_cancel">取消</button>
+      <button class="btn" id="m_quick" title="只用編號先建檔，名稱與介紹稍後補">⚡ 快速建立</button>
       <button class="btn primary" id="m_save">儲存</button>
     </div>
   </div>
@@ -1493,6 +1529,8 @@ let state = {
   adminPass: "0000",
   staffPass: "1234",
   gbMap: {},
+  geminiKey: "",
+  geminiModel: "gemini-flash-latest",
   shopName: "",
   markup: 15,
   roundTo: 10,
@@ -1526,6 +1564,7 @@ async function saveState(){
   }
   const note=document.getElementById("storageNote");
   if(note) note.style.display = storageOK ? "none":"flex";
+  if(typeof syncQueuePush==="function") syncQueuePush();
 }
 async function loadState(){
   try{
@@ -1550,8 +1589,98 @@ async function loadState(){
 }
 
 /* ============================================================
-   工具函式
+   雲端同步（Supabase REST，多裝置共用）
 ============================================================ */
+const SYNC_CFG_KEY="erp_sync_cfg_v1";
+let syncCfg=null, syncToken="", syncRefresh="", syncRev=-1, syncOn=false, applyingRemote=false;
+let syncTimer=null, pushTimer=null, syncStatus="off";
+const myClientId = "C"+Math.random().toString(36).slice(2,10);
+function loadSyncCfg(){ try{ syncCfg=JSON.parse(localStorage.getItem(SYNC_CFG_KEY)||"null"); }catch(e){ syncCfg=null; } return syncCfg; }
+function saveSyncCfg(c){ syncCfg=c; try{ localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(c)); }catch(e){} }
+function setSyncStatus(s, msg){
+  syncStatus=s;
+  const el=document.getElementById("syncStatus");
+  if(el){
+    const map={off:["未連線","var(--muted)"],connecting:["連線中…","var(--warn)"],on:["已連線・同步中","var(--ok)"],error:["連線異常","var(--price)"]};
+    const [t,c]=map[s]||map.off; el.textContent=(msg||t); el.style.color=c;
+  }
+}
+async function syncLogin(){
+  const {url,key,email,password}=syncCfg;
+  const res=await fetch(url.replace(/\/$/,"")+"/auth/v1/token?grant_type=password",{
+    method:"POST", headers:{"Content-Type":"application/json","apikey":key},
+    body:JSON.stringify({email,password})
+  });
+  if(!res.ok){ const t=await res.text(); throw new Error("登入失敗 "+res.status+"："+t.slice(0,100)); }
+  const d=await res.json(); syncToken=d.access_token; syncRefresh=d.refresh_token||"";
+}
+function syncHeaders(){ return {"apikey":syncCfg.key,"Authorization":"Bearer "+syncToken,"Content-Type":"application/json"}; }
+async function syncApiGet(){
+  const url=syncCfg.url.replace(/\/$/,"")+"/rest/v1/erp_state?id=eq.main&select=*";
+  let res=await fetch(url,{headers:syncHeaders()});
+  if(res.status===401){ await syncLogin(); res=await fetch(url,{headers:syncHeaders()}); }
+  if(!res.ok) throw new Error("讀取 "+res.status);
+  const rows=await res.json(); return rows&&rows[0]?rows[0]:null;
+}
+async function syncApiUpsert(rev){
+  const url=syncCfg.url.replace(/\/$/,"")+"/rest/v1/erp_state";
+  const body=[{id:"main", data:state, rev, writer:myClientId, updated_at:new Date().toISOString()}];
+  let res=await fetch(url,{method:"POST", headers:{...syncHeaders(),"Prefer":"resolution=merge-duplicates"}, body:JSON.stringify(body)});
+  if(res.status===401){ await syncLogin(); res=await fetch(url,{method:"POST", headers:{...syncHeaders(),"Prefer":"resolution=merge-duplicates"}, body:JSON.stringify(body)}); }
+  if(!res.ok){ const t=await res.text(); throw new Error("寫入 "+res.status+"："+t.slice(0,80)); }
+}
+async function syncPull(initial){
+  const row=await syncApiGet();
+  if(!row){ // 雲端還沒資料 → 用本機推上去
+    syncRev=0; await syncApiUpsert(1); syncRev=1; return;
+  }
+  if(row.rev!==syncRev && row.writer!==myClientId){
+    applyingRemote=true;
+    try{ state=JSON.parse(typeof row.data==="string"?row.data:JSON.stringify(row.data)); }catch(e){}
+    syncRev=row.rev;
+    await saveState();     // 存到本機（push 會被 applyingRemote 擋掉）
+    applyingRemote=false;
+    if(typeof renderAll==="function") renderAll();
+    if(typeof syncSettingsUI==="function") syncSettingsUI();
+    if(!initial) toast("已從雲端同步最新資料");
+  } else {
+    syncRev=row.rev;
+  }
+}
+function syncQueuePush(){
+  if(!syncOn || applyingRemote) return;
+  clearTimeout(pushTimer);
+  pushTimer=setTimeout(async ()=>{
+    try{ const rev=(syncRev<0?0:syncRev)+1; await syncApiUpsert(rev); syncRev=rev; setSyncStatus("on"); }
+    catch(e){ setSyncStatus("error", "同步失敗，稍後重試"); }
+  }, 900);
+}
+async function syncTick(){
+  if(!syncOn || document.hidden) return;
+  try{ await syncPull(false); setSyncStatus("on"); }
+  catch(e){ setSyncStatus("error","連線異常，重試中"); try{ await syncLogin(); }catch(_){}}
+}
+async function startSync(silent){
+  const cfg=loadSyncCfg();
+  if(!cfg||!cfg.url||!cfg.key||!cfg.email||!cfg.password){ if(!silent) toast("請先填寫完整的同步設定"); return; }
+  setSyncStatus("connecting");
+  try{
+    await syncLogin();
+    await syncPull(true);
+    syncOn=true; setSyncStatus("on");
+    clearInterval(syncTimer); syncTimer=setInterval(syncTick, 4000);
+    if(!silent) toast("雲端同步已啟動");
+  }catch(e){ syncOn=false; setSyncStatus("error", (e.message||"連線失敗")); if(!silent) toast("連線失敗："+(e.message||e)); }
+}
+function stopSync(){ syncOn=false; clearInterval(syncTimer); clearTimeout(pushTimer); setSyncStatus("off"); }
+function saveSyncSettings(){
+  const cfg={ url:$("#syncUrl").value.trim(), key:$("#syncKey").value.trim(), email:$("#syncEmail").value.trim(), password:$("#syncPass").value, enabled:true };
+  if(!cfg.url||!cfg.key||!cfg.email||!cfg.password){ toast("請填寫網址、金鑰、帳號、密碼"); return; }
+  saveSyncCfg(cfg);
+  stopSync(); startSync(false);
+}
+function disconnectSync(){ if(syncCfg){ syncCfg.enabled=false; saveSyncCfg(syncCfg); } stopSync(); toast("已停用雲端同步（本機資料保留）"); }
+
 const $ = s=>document.querySelector(s);
 const $$ = s=>document.querySelectorAll(s);
 const esc = s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -1580,7 +1709,7 @@ function nextCode(catName){
 /* ============================================================
    新增 / 匯入
 ============================================================ */
-function addProduct({name, category, base, price, stock, cost, promoType, bulkQty, bulkPrice, secondPercent, bogoBuy, bogoFree, consignor, consignRate, variants, code}){
+function addProduct({name, category, base, price, stock, cost, promoType, bulkQty, bulkPrice, secondPercent, bogoBuy, bogoFree, consignor, consignRate, variants, code, desc}){
   category = catExists(category) ? category : fallbackCat();
   base = Number(base)||0;
   const p = {
@@ -1599,6 +1728,7 @@ function addProduct({name, category, base, price, stock, cost, promoType, bulkQt
     bogoFree: parseInt(bogoFree)||1,
     consignor: String(consignor||"").trim(),
     consignRate: (consignRate!=null && consignRate!=="")?Number(consignRate):0,
+    desc: String(desc||"").trim(),
     variants: Array.isArray(variants)?variants:[],
   };
   if(hasVariants(p)) recomputeStock(p);
@@ -1634,6 +1764,8 @@ async function clearAllData(){
     autoReceipt: state.autoReceipt!==false,
     adminPass: state.adminPass||"0000",
     staffPass: state.staffPass||"1234",
+    geminiKey: state.geminiKey||"",
+    geminiModel: state.geminiModel||"gemini-flash-latest",
     expenses: [], stocktakes: [], cashCounts: [],
     gbMap: {},
     lastBackup: state.lastBackup||null,
@@ -1679,10 +1811,10 @@ function renderInventory(){
     const margin = price>0 ? ((price-cost)/price*100) : 0;
     const mColor = cost<=0 ? "var(--muted)" : (margin<20?"var(--price)":(margin<40?"var(--warn)":"var(--ok)"));
     const mTxt = cost<=0 ? "—" : margin.toFixed(0)+"%";
-    const vchips = hasVariants(p) ? `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">`+
-        p.variants.map(v=>`<span class="cat-pill" style="font-size:10.5px;${(parseInt(v.stock)||0)<=0?'color:var(--price);border-color:#e2c2c2':''}">${esc(v.vname)} ${parseInt(v.stock)||0}</span>`).join("")+`</div>` : "";
+    const vchips = hasVariants(p) ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:6px">`+
+        p.variants.map(v=>`<span style="display:inline-flex;align-items:center;gap:3px"><span class="cat-pill" style="font-size:10.5px">${esc(v.vname)}</span><input class="v-stock-in" data-vcode="${esc(v.code)}" type="number" min="0" value="${parseInt(v.stock)||0}" style="width:48px;border:1px solid var(--line);border-radius:6px;padding:3px 5px;font-family:var(--mono);text-align:right;background:#fff"></span>`).join("")+`</div>` : "";
     const stockCell = hasVariants(p)
-      ? `<span class="mono" title="由各規格加總，請在編輯內調整">${p.stock||0}<span class="hint" style="display:block;font-size:10px">${p.variants.length} 規格</span></span>`
+      ? `<span class="stock-cell"><span class="mono" title="各規格加總">${p.stock||0}<span class="hint" style="display:block;font-size:10px">${p.variants.length} 規格 ↙</span></span><button class="btn sm stock-save" title="儲存各規格庫存">存</button></span>`
       : `<span class="stock-cell"><input class="stock-in${(p.stock||0)<=0?' low':''}" type="number" value="${p.stock||0}"><button class="btn sm stock-save" title="儲存庫存">存</button></span>`;
     return `
     <tr data-code="${esc(p.code)}">
@@ -2175,6 +2307,8 @@ function restoreJson(file){
         state.stocktakes = state.stocktakes || [];
         state.cashCounts = state.cashCounts || [];
         if(state.gbMap==null) state.gbMap={};
+        if(state.geminiKey==null) state.geminiKey="";
+        if(!state.geminiModel) state.geminiModel="gemini-flash-latest";
         (state.members||[]).forEach(m=>{ if(m.lineId==null) m.lineId=""; });
         if(state.adminPass==null) state.adminPass="0000";
         if(state.staffPass==null) state.staffPass="1234";
@@ -2182,7 +2316,7 @@ function restoreJson(file){
         if(state.pointValue==null) state.pointValue=1;
         if(state.lowStock==null) state.lowStock=3;
         if(state.backupAtCount==null) state.backupAtCount=0;
-        state.products.forEach(p=>{ if(p.stock==null) p.stock=0; if(p.cost==null) p.cost=0; if(p.bulkQty==null) p.bulkQty=0; if(p.bulkPrice==null) p.bulkPrice=0; if(p.promoType==null) p.promoType=(p.bulkQty>0?'bulk':'none'); if(p.secondPercent==null) p.secondPercent=50; if(p.bogoBuy==null) p.bogoBuy=1; if(p.bogoFree==null) p.bogoFree=1; if(p.consignor==null) p.consignor=''; if(p.consignRate==null) p.consignRate=0; if(!Array.isArray(p.variants)) p.variants=[]; if(p.variants.length) recomputeStock(p); });
+        state.products.forEach(p=>{ if(p.stock==null) p.stock=0; if(p.cost==null) p.cost=0; if(p.bulkQty==null) p.bulkQty=0; if(p.bulkPrice==null) p.bulkPrice=0; if(p.promoType==null) p.promoType=(p.bulkQty>0?'bulk':'none'); if(p.secondPercent==null) p.secondPercent=50; if(p.bogoBuy==null) p.bogoBuy=1; if(p.bogoFree==null) p.bogoFree=1; if(p.consignor==null) p.consignor=''; if(p.consignRate==null) p.consignRate=0; if(!Array.isArray(p.variants)) p.variants=[]; if(p.variants.length) recomputeStock(p); if(p.desc==null) p.desc=''; });
         saveState(); syncSettingsUI(); renderAll();
         if($("#lastBackupInfo")) $("#lastBackupInfo").textContent=lastBackupText();
         checkBackupReminder();
@@ -2253,7 +2387,10 @@ function refreshDatalist(){
 let poCart=[];
 function poAddItem(code){
   const r=resolveCode(code); if(!r){ toast("查無此商品，請確認編號"); return; }
-  if(hasVariants(r.product) && !r.variant){ openVariantPicker(r.product, v=>poAddResolved(r.product, v)); return; }
+  if(hasVariants(r.product) && !r.variant){
+    if(r.product.variants.length===1){ poAddResolved(r.product, r.product.variants[0]); return; }
+    openVariantPicker(r.product, v=>poAddResolved(r.product, v)); return;
+  }
   poAddResolved(r.product, r.variant);
 }
 function poAddResolved(p, v){
@@ -2343,8 +2480,14 @@ function saveAllStock(){
   let n=0;
   document.querySelectorAll("#invBody tr[data-code]").forEach(tr=>{
     const p=state.products.find(x=>x.code===tr.dataset.code); if(!p) return;
-    const si=tr.querySelector(".stock-in");
-    if(si){ const v=parseInt(si.value); if(!isNaN(v)){ p.stock=v; si.classList.toggle("low", v<=0); } const sb=tr.querySelector(".stock-save"); if(sb) sb.classList.remove("dirty"); }
+    if(hasVariants(p)){
+      tr.querySelectorAll(".v-stock-in").forEach(inp=>{ const v=p.variants.find(x=>x.code===inp.dataset.vcode); if(v) v.stock=Math.max(0,parseInt(inp.value)||0); });
+      recomputeStock(p);
+      const sb=tr.querySelector(".stock-save"); if(sb) sb.classList.remove("dirty");
+    } else {
+      const si=tr.querySelector(".stock-in");
+      if(si){ const v=parseInt(si.value); if(!isNaN(v)){ p.stock=v; si.classList.toggle("low", v<=0); } const sb=tr.querySelector(".stock-save"); if(sb) sb.classList.remove("dirty"); }
+    }
     const pi=tr.querySelector(".price-in"); if(pi){ const v=Number(pi.value); if(!isNaN(v)) p.price=v; }
     const ci=tr.querySelector(".cost-in"); if(ci){ const v=Number(ci.value); if(!isNaN(v)) p.cost=v; }
     n++;
@@ -2484,7 +2627,10 @@ function addCombo(){
 }
 function soAddItem(code){
   const r=resolveCode(code); if(!r){ toast("查無此商品，請確認條碼"); return; }
-  if(hasVariants(r.product) && !r.variant){ openVariantPicker(r.product, v=>addResolvedToCart(r.product, v)); return; }
+  if(hasVariants(r.product) && !r.variant){
+    if(r.product.variants.length===1){ addResolvedToCart(r.product, r.product.variants[0]); return; }
+    openVariantPicker(r.product, v=>addResolvedToCart(r.product, v)); return;
+  }
   addResolvedToCart(r.product, r.variant);
 }
 function addResolvedToCart(p, v){
@@ -2968,6 +3114,7 @@ function onCamScan(text){
     return;
   }
   const r=resolveCode(code);
+  const needPick = r && hasVariants(r.product) && !r.variant && r.product.variants.length>1;
   if(r && !needPick){
     const p=r.product, v=r.variant;
     const dispName=v?(p.name+"（"+v.vname+"）"):p.name;
@@ -3053,7 +3200,10 @@ function retUnitAmount(p){ return retType==="customer" ? (p.price||0) : (p.cost|
 function retAddItem(code, qty){
   const r=resolveCode(code); if(!r){ toast("查無此商品，請確認編號"); return; }
   qty = qty || Math.max(1,parseInt($("#retQty").value)||1);
-  if(hasVariants(r.product) && !r.variant){ openVariantPicker(r.product, v=>retAddResolved(r.product, v, qty)); return; }
+  if(hasVariants(r.product) && !r.variant){
+    if(r.product.variants.length===1){ retAddResolved(r.product, r.product.variants[0], qty); return; }
+    openVariantPicker(r.product, v=>retAddResolved(r.product, v, qty)); return;
+  }
   retAddResolved(r.product, r.variant, qty);
 }
 function retAddResolved(p, v, qty){
@@ -3680,6 +3830,8 @@ function syncSettingsUI(){
   if($("#ptsPer")){ $("#ptsPer").value=state.pointsPer; $("#ptVal").value=state.pointValue; $("#ruleA").textContent=state.pointsPer; $("#ruleB").textContent=state.pointValue; }
   if($("#lowStockInput")) $("#lowStockInput").value=state.lowStock;
   if($("#setAdminPass")){ $("#setAdminPass").value=state.adminPass||"0000"; $("#setStaffPass").value=state.staffPass||"1234"; }
+  if($("#setGeminiKey")){ $("#setGeminiKey").value=state.geminiKey||""; $("#setGeminiModel").value=state.geminiModel||"gemini-flash-latest"; }
+  if($("#syncUrl")){ const c=loadSyncCfg()||{}; $("#syncUrl").value=c.url||""; $("#syncKey").value=c.key||""; $("#syncEmail").value=c.email||""; $("#syncPass").value=c.password||""; }
 }
 
 /* ============================================================
@@ -4246,18 +4398,25 @@ function bindEvents(){
     if(e.target.classList.contains("act-edit")){ openModal(code); }
     if(e.target.classList.contains("stock-save")){
       const p = state.products.find(x=>x.code===code); if(!p) return;
-      const input = tr.querySelector(".stock-in");
-      p.stock = parseInt(input.value)||0;
-      saveState();
-      input.classList.toggle("low", p.stock<=0);
-      e.target.classList.remove("dirty");
-      renderReport();
-      renderLowStock();
-      toast(p.name+" 庫存已更新為 "+p.stock);
+      if(hasVariants(p)){
+        tr.querySelectorAll(".v-stock-in").forEach(inp=>{ const v=p.variants.find(x=>x.code===inp.dataset.vcode); if(v) v.stock=Math.max(0,parseInt(inp.value)||0); });
+        recomputeStock(p);
+        saveState(); renderInventory(); renderReport(); renderLowStock();
+        toast(p.name+" 各規格庫存已更新（合計 "+p.stock+"）");
+      }else{
+        const input = tr.querySelector(".stock-in");
+        p.stock = parseInt(input.value)||0;
+        saveState();
+        input.classList.toggle("low", p.stock<=0);
+        e.target.classList.remove("dirty");
+        renderReport();
+        renderLowStock();
+        toast(p.name+" 庫存已更新為 "+p.stock);
+      }
     }
   });
   $("#invBody").addEventListener("input",e=>{
-    if(e.target.classList.contains("stock-in")){
+    if(e.target.classList.contains("stock-in")||e.target.classList.contains("v-stock-in")){
       const btn = e.target.closest("tr")?.querySelector(".stock-save");
       if(btn) btn.classList.add("dirty");
     }
@@ -4290,6 +4449,12 @@ function bindEvents(){
     if(!$("#m_price").value){ $("#m_price").placeholder = "自動：" + suggestPrice($("#m_base").value||0); }
   });
   $("#m_save").addEventListener("click",saveModal);
+  $("#m_quick").addEventListener("click",quickCreate);
+  $("#m_photoBtn").addEventListener("click",()=>$("#m_photoInput").click());
+  $("#m_photoInput").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) photoIdentify(f); e.target.value=""; });
+  $("#saveGemini").addEventListener("click",saveGeminiSettings);
+  $("#syncConnect").addEventListener("click",saveSyncSettings);
+  $("#syncDisconnect").addEventListener("click",disconnectSync);
   $("#m_promoType").addEventListener("change",syncPromoFields);
   $("#m_addVariant").addEventListener("click",()=>{
     const p=editingCode?state.products.find(x=>x.code===editingCode):null;
@@ -4382,6 +4547,7 @@ function bindEvents(){
 
   // 進貨
   $("#poScan").addEventListener("keydown",e=>{ if(e.key==="Enter"){ poAddItem(e.target.value); e.target.value=""; } });
+  $("#poScan").addEventListener("change",e=>{ const v=e.target.value.trim(); if(v && resolveCode(v)){ poAddItem(v); e.target.value=""; } });
   $("#poAdd").addEventListener("click",()=>{ if($("#poScan").value.trim()){ poAddItem($("#poScan").value); $("#poScan").value=""; } else toast("請先掃描或輸入商品編號"); });
   $("#poSave").addEventListener("click",savePurchase);
   $("#poTemplate").addEventListener("click",downloadPurchaseTemplate);
@@ -4627,6 +4793,8 @@ function openModal(code, presetCode){
     $("#m_bogoBuy").value=p.bogoBuy||1; $("#m_bogoFree").value=p.bogoFree||1;
     refreshConsignorOptions(p.consignor||""); $("#m_consignRate").value=(p.consignRate||p.consignRate===0)?(p.consignRate||""):"";
     modalVariants = Array.isArray(p.variants) ? p.variants.map(v=>({vname:v.vname, code:v.code, stock:parseInt(v.stock)||0})) : [];
+    if($("#m_desc")) $("#m_desc").value=p.desc||"";
+    if($("#m_quick")) $("#m_quick").style.display="none";
   }else{
     if(codeInput){ codeInput.disabled=false; codeInput.value=presetCode?String(presetCode).trim():""; }
     if($("#m_codeHint")) $("#m_codeHint").textContent="留空會依分類自動編號；若要用商品本身的條碼，可直接填或用「掃碼新增」帶入。";
@@ -4638,7 +4806,10 @@ function openModal(code, presetCode){
     $("#m_secondPercent").value=50; $("#m_bogoBuy").value=1; $("#m_bogoFree").value=1;
     refreshConsignorOptions(""); $("#m_consignRate").value="";
     modalVariants=[];
+    if($("#m_desc")) $("#m_desc").value="";
+    if($("#m_quick")) $("#m_quick").style.display="";
   }
+  if($("#m_photoHint")) $("#m_photoHint").style.display="none";
   renderModalVariants();
   syncPromoFields();
   $("#modalBg").classList.add("show");
@@ -4685,6 +4856,7 @@ function saveModal(){
     }
   }
   const hasV=vrows.length>0;
+  const desc = $("#m_desc") ? $("#m_desc").value.trim() : "";
   if(editingCode){
     const p=state.products.find(x=>x.code===editingCode);
     p.name=name; p.category=cat; p.base=base;
@@ -4693,6 +4865,7 @@ function saveModal(){
     p.promoType=promoType; p.bulkQty=bulkQty; p.bulkPrice=bulkPrice;
     p.secondPercent=secondPercent; p.bogoBuy=bogoBuy; p.bogoFree=bogoFree;
     p.consignor=consignor; p.consignRate=consignRate;
+    p.desc=desc;
     p.variants=vrows;
     if(hasV) recomputeStock(p); else p.stock=stock;
   }else{
@@ -4704,10 +4877,69 @@ function saveModal(){
         if(hasVariants(other) && other.variants.some(ov=>String(ov.code||"").toLowerCase()===lc)){ toast("編號「"+customCode+"」與其他商品的變體條碼重複"); return; }
       }
     }
-    addProduct({name,category:cat,base,price:priceVal,stock,cost,promoType,bulkQty,bulkPrice,secondPercent,bogoBuy,bogoFree,consignor,consignRate,variants:vrows,code:customCode});
+    addProduct({name,category:cat,base,price:priceVal,stock,cost,promoType,bulkQty,bulkPrice,secondPercent,bogoBuy,bogoFree,consignor,consignRate,variants:vrows,code:customCode,desc});
   }
   saveState(); renderAll(); closeModal();
   toast(editingCode?"已更新":"已新增商品");
+}
+/* ---------- 快速建立（只填編號，稍後補資料） ---------- */
+function quickCreate(){
+  let customCode = $("#m_code") ? $("#m_code").value.trim() : "";
+  if(customCode){
+    const lc=customCode.toLowerCase();
+    for(const other of state.products){
+      if(other.code.toLowerCase()===lc){ toast("編號「"+customCode+"」已被使用"); return; }
+      if(hasVariants(other) && other.variants.some(ov=>String(ov.code||"").toLowerCase()===lc)){ toast("編號與其他商品變體重複"); return; }
+    }
+  }
+  const name=($("#m_name").value.trim())||"待補充";
+  const cat=$("#m_cat").value, base=Number($("#m_base").value)||0;
+  const desc=$("#m_desc")?$("#m_desc").value.trim():"";
+  addProduct({name, category:cat, base, price:$("#m_price").value, stock:Number($("#m_stock").value)||0, cost:Number($("#m_cost").value)||0, promoType:"none", consignor:"", consignRate:0, variants:[], code:customCode, desc});
+  saveState(); renderAll(); closeModal();
+  toast("已快速建立："+name+"（稍後可補名稱與介紹）");
+}
+/* ---------- 拍照 AI 命名（Gemini） ---------- */
+async function geminiIdentify(base64, mime){
+  const key=(state.geminiKey||"").trim();
+  if(!key) throw new Error("尚未設定 Gemini API 金鑰");
+  const model=state.geminiModel||"gemini-flash-latest";
+  const url="https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent?key="+encodeURIComponent(key);
+  const prompt='你是零售商品建檔助手。看這張商品照片，只回覆繁體中文 JSON（不要 markdown、不要多餘文字）：{"name":"簡短商品名稱，15字內，適合貼標籤","desc":"一句話介紹，材質/特色/規格，30字內"}';
+  const body={ contents:[{ parts:[ {text:prompt}, {inline_data:{mime_type:mime, data:base64}} ] }] };
+  const res=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(!res.ok){ const t=await res.text(); throw new Error("API "+res.status+"："+t.slice(0,120)); }
+  const data=await res.json();
+  let txt=""; try{ txt=data.candidates[0].content.parts.map(p=>p.text||"").join(""); }catch(e){ throw new Error("AI 沒有回覆內容"); }
+  txt=txt.replace(/```json|```/g,"").trim();
+  let obj; try{ obj=JSON.parse(txt); }catch(e){ obj={name:txt.slice(0,20), desc:""}; }
+  return obj;
+}
+function photoIdentify(file){
+  const hint=$("#m_photoHint");
+  const show=(msg,color)=>{ if(hint){ hint.style.display="block"; hint.textContent=msg; hint.style.color=color||"var(--muted)"; } };
+  if(!file) return;
+  if(!(state.geminiKey||"").trim()){ show("尚未設定 AI 金鑰：請到「商品管理 → AI 拍照辨識設定」貼上免費 Gemini 金鑰。","var(--price)"); return; }
+  show("辨識中…（依網路約數秒）");
+  const rd=new FileReader();
+  rd.onload=async ()=>{
+    try{
+      const dataUrl=String(rd.result);
+      const b64=dataUrl.split(",")[1];
+      const mime=(dataUrl.match(/^data:(.*?);/)||[])[1]||"image/jpeg";
+      const r=await geminiIdentify(b64, mime);
+      if(r.name) $("#m_name").value=r.name;
+      if(r.desc && $("#m_desc") && !$("#m_desc").value.trim()) $("#m_desc").value=r.desc;
+      show("✓ 已辨識，請確認或修改","var(--ok)");
+    }catch(e){ show("辨識失敗："+(e.message||e),"var(--price)"); }
+  };
+  rd.onerror=()=>show("讀取照片失敗","var(--price)");
+  rd.readAsDataURL(file);
+}
+function saveGeminiSettings(){
+  state.geminiKey=$("#setGeminiKey").value.trim();
+  const m=$("#setGeminiModel").value.trim(); state.geminiModel=m||"gemini-flash-latest";
+  saveState(); toast(state.geminiKey?"已儲存 AI 設定":"已清除 AI 金鑰");
 }
 
 /* ============================================================
@@ -4733,6 +4965,8 @@ function saveModal(){
         state.stocktakes = state.stocktakes || [];
         state.cashCounts = state.cashCounts || [];
         if(state.gbMap==null) state.gbMap={};
+        if(state.geminiKey==null) state.geminiKey="";
+        if(!state.geminiModel) state.geminiModel="gemini-flash-latest";
         (state.members||[]).forEach(m=>{ if(m.lineId==null) m.lineId=""; });
         if(state.adminPass==null) state.adminPass="0000";
         if(state.staffPass==null) state.staffPass="1234";
@@ -4741,7 +4975,7 @@ function saveModal(){
   if(state.lowStock==null) state.lowStock=3;
   if(state.autoReceipt==null) state.autoReceipt=true;
   if(state.backupAtCount==null) state.backupAtCount=0;
-  state.products.forEach(p=>{ if(p.stock==null) p.stock=0; if(p.cost==null) p.cost=0; if(p.bulkQty==null) p.bulkQty=0; if(p.bulkPrice==null) p.bulkPrice=0; if(p.promoType==null) p.promoType=(p.bulkQty>0?'bulk':'none'); if(p.secondPercent==null) p.secondPercent=50; if(p.bogoBuy==null) p.bogoBuy=1; if(p.bogoFree==null) p.bogoFree=1; if(p.consignor==null) p.consignor=''; if(p.consignRate==null) p.consignRate=0; if(!Array.isArray(p.variants)) p.variants=[]; if(p.variants.length) recomputeStock(p); });
+  state.products.forEach(p=>{ if(p.stock==null) p.stock=0; if(p.cost==null) p.cost=0; if(p.bulkQty==null) p.bulkQty=0; if(p.bulkPrice==null) p.bulkPrice=0; if(p.promoType==null) p.promoType=(p.bulkQty>0?'bulk':'none'); if(p.secondPercent==null) p.secondPercent=50; if(p.bogoBuy==null) p.bogoBuy=1; if(p.bogoFree==null) p.bogoFree=1; if(p.consignor==null) p.consignor=''; if(p.consignRate==null) p.consignRate=0; if(!Array.isArray(p.variants)) p.variants=[]; if(p.variants.length) recomputeStock(p); if(p.desc==null) p.desc=''; });
   seedIfEmpty();
   await saveState();
   syncSettingsUI();
@@ -4765,6 +4999,9 @@ function saveModal(){
   }else{
     $("#loginOverlay").classList.add("show"); setTimeout(()=>$("#loginUser").focus(),80);
   }
+  // 雲端同步：若已設定且啟用，開機自動連線
+  try{ const c=loadSyncCfg(); if(c && c.enabled!==false && c.url && c.key && c.email && c.password){ startSync(true); } }catch(e){}
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden && syncOn) syncTick(); });
 })();
 </script>
 </body>
