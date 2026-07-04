@@ -2780,14 +2780,15 @@ function saveSale(){
 /* ============ 團購匯入（LINE 團購） ============ */
 let gbRows=[], gbHeaders=[], gbParsed=[];
 function gbNorm(s){ return String(s==null?"":s).trim().toLowerCase().replace(/\s+/g,""); }
-function parseCSV(text){
+function parseCSV(text, delim){
+  delim = delim || ",";
   const rows=[]; let row=[], cur="", q=false;
   for(let i=0;i<text.length;i++){
     const ch=text[i];
     if(q){ if(ch==='"'){ if(text[i+1]==='"'){ cur+='"'; i++; } else q=false; } else cur+=ch; }
     else{
       if(ch==='"') q=true;
-      else if(ch===','){ row.push(cur); cur=""; }
+      else if(ch===delim){ row.push(cur); cur=""; }
       else if(ch==='\n'){ row.push(cur); rows.push(row); row=[]; cur=""; }
       else if(ch==='\r'){}
       else cur+=ch;
@@ -2795,6 +2796,13 @@ function parseCSV(text){
   }
   if(cur!==""||row.length){ row.push(cur); rows.push(row); }
   return rows.filter(r=>r.some(c=>String(c).trim()!==""));
+}
+function detectDelim(text){
+  // 從網頁表格複製→Tab 分隔（空欄以 Tab 佔位）；一般 CSV→逗號
+  const firstLine=String(text).split("\n")[0]||"";
+  if(firstLine.indexOf("\t")>=0) return "\t";
+  if(firstLine.indexOf(",")>=0) return ",";
+  return "\t"; // 預設用 Tab，較能保留空欄位對齊
 }
 function fillColSelect(sel, headers, chosen, allowEmpty){
   const el=$(sel); if(!el) return;
@@ -2835,7 +2843,7 @@ function gbLoadText(text){
     }catch(e){}
   }
   if(!objs.length){
-    const rows=parseCSV(text);
+    const rows=parseCSV(text, detectDelim(text));
     if(rows.length<2){ toast("資料太少，至少要有標題列＋一列資料"); return; }
     objs=gbRowsToObjs(rows);
   }
