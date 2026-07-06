@@ -2636,7 +2636,7 @@ function soAddItem(code){
 function addResolvedToCart(p, v){
   const code = v ? v.code : p.code;
   const nm   = v ? (p.name+"（"+v.vname+"）") : p.name;
-  let ex=soCart.find(i=>i.code===code);
+  let ex=soCart.find(i=>i.code===code && !i.fromGb);
   if(ex){ ex.qty+=1; }
   else { soCart.push({code, name:nm, qty:1, price:p.price, cost:p.cost||0, manual:false}); }
   renderSoCart();
@@ -2737,9 +2737,10 @@ function renderSoCart(){
     const pd=linePromoDisplay(i);
     const promoTag = pd.tag ? `<span class="promo-tag">${esc(pd.tag)}</span>` : "";
     const promoHint = pd.hint ? `<span class="promo-hint">${esc(pd.hint)}</span>` : "";
+    const gbTag = i.fromGb ? `<span class="cat-pill" style="background:#eef2fd;border-color:#c9d6f5;color:#1c357f;font-size:10.5px;margin-left:4px" title="來自團購取貨${i.gbCustomer?('／'+i.gbCustomer):''}">📦 團購</span>` : "";
     return `
     <div class="cart-row${pd.tag?' has-promo':''}" data-idx="${idx}">
-      <div class="nm">${esc(i.name)}<br><span class="code">${esc(i.code)}</span><span class="rstock${low?' low':''}">庫存 ${stock}</span>${promoTag}${promoHint}</div>
+      <div class="nm">${esc(i.name)}${gbTag}<br><span class="code">${esc(i.code)}</span><span class="rstock${low?' low':''}">庫存 ${stock}</span>${promoTag}${promoHint}</div>
       <span class="qty-step"><button type="button" class="qty-btn qdec">−</button><input class="q so-q" type="number" min="1" value="${i.qty}"><button type="button" class="qty-btn qinc">＋</button></span>
       <label class="hint">售價</label><input class="pr so-p" type="number" min="0" value="${i.price}">
       <span class="amt">$${fmt(i.qty*i.price)}</span>
@@ -2913,7 +2914,7 @@ function gbBuild(){
 function renderGbPreview(){
   const body=$("#gbPreviewBody"); if(!body) return;
   const used={};
-  body.innerHTML=gbParsed.map((r,idx)=>{
+  const rowHtml=(r,idx)=>{
     let after="—", style="";
     if(r.code==="__NOSTOCK__"){ after='<span style="color:var(--muted)">不扣庫存</span>'; }
     else if(r.code){
@@ -2931,14 +2932,66 @@ function renderGbPreview(){
       <td><select class="gb-map" style="min-width:150px">${gbProductOptions(r.code)}</select></td>
       <td style="text-align:right;${style}" class="mono">${after}</td>
     </tr>`;
-  }).join("");
+  };
+  // 依顧客分組，讓同一人可一次「加入銷貨購物車」和現場商品合併結帳
+  const groups={}; const order=[];
+  gbParsed.forEach((r,idx)=>{ const k=r.customer||"（未填顧客）"; if(!groups[k]){groups[k]=[]; order.push(k);} groups[k].push(idx); });
+  const multiCust = order.length>1 || (order.length===1 && order[0]!=="（未填顧客）");
+  let html="";
+  order.forEach(cust=>{
+    const idxs=groups[cust];
+    const rowsHtml=idxs.map(i=>rowHtml(gbParsed[i],i)).join("");
+    if(multiCust){
+      const qty=idxs.reduce((s,i)=>s+gbParsed[i].qty,0);
+      html += `<tr class="gb-cust-hd" data-cust="${esc(cust)}"><td colspan="5"><b>👤 ${esc(cust)}</b>　共 ${idxs.length} 品項・${qty} 件</td>
+        <td style="text-align:right"><button type="button" class="btn sm gb-tocart" data-cust="${esc(cust)}" title="把這位顧客的團購品加進銷貨購物車，可再加現場商品一起結帳">🛒 加入結帳</button></td></tr>`;
+    }
+    html += rowsHtml;
+  });
+  body.innerHTML=html;
+  if(!gbParsed.length){
+    $("#gbSummary").innerHTML=`<span style="color:var(--ok)">✓ 已全部處理完畢</span>`;
+    $("#gbCommit").disabled=true;
+    return;
+  }
   const unmatched=gbParsed.filter(r=>!r.code).length;
   const total=gbParsed.reduce((s,r)=>s+r.qty,0);
   const neg=Object.keys(used).some(c=>{const r2=resolveCode(c);const cur=r2?(r2.variant?(parseInt(r2.variant.stock)||0):(r2.product.stock||0)):0;return cur-used[c]<0;});
   $("#gbSummary").innerHTML=`共 ${gbParsed.length} 個品項、${total} 件`
     +(unmatched?`　<b style="color:var(--price)">尚有 ${unmatched} 項未對應</b>`:`　<span style="color:var(--ok)">全部已對應 ✓</span>`)
-    +(neg?`　<b style="color:var(--price)">部分庫存會變負數</b>`:"");
-  $("#gbCommit").disabled=unmatched>0;
+    +(neg?`　<b style="color:var(--price)">部分庫存會變負數</b>`:"")
+    +(multiCust?`　<span class="hint">單一顧客可按「🛒 加入結帳」併入現場購買，一起開一張單</span>`:"");
+  $("#gbCommit").disabled=unmatched>0 || gbParsed.length===0;
+}
+/* 把某位顧客的團購品（已對應者）搬進銷貨購物車，可再加現場商品，最後用一般結帳流程合成同一張單 */
+function gbSendCustomerToCart(cust){
+  const idxs=[]; gbParsed.forEach((r,i)=>{ if((r.customer||"（未填顧客）")===cust) idxs.push(i); });
+  if(!idxs.length) return;
+  const rows=idxs.map(i=>gbParsed[i]);
+  if(rows.some(r=>!r.code)){ toast("這位顧客還有品項未對應商品，請先對應完再加入結帳"); return; }
+  rows.forEach(r=>{
+    if(r.code==="__NOSTOCK__"){
+      soCart.push({code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, fromGb:true, gbCustomer:cust});
+      return;
+    }
+    const rr=resolveCode(r.code); if(!rr) return;
+    const p=rr.product, v=rr.variant;
+    const code=v?v.code:p.code, nm=v?(p.name+"（"+v.vname+"）"):p.name;
+    const price=r.price!=null?r.price:p.price;
+    const ex=soCart.find(i=>i.code===code && !i.manual && i.fromGb && i.gbCustomer===cust);
+    if(ex) ex.qty+=r.qty; else soCart.push({code, name:nm, qty:r.qty, price, cost:p.cost||0, manual:false, fromGb:true, gbCustomer:cust});
+  });
+  // 從待匯入清單移除，避免之後「確認匯入」時重複建單
+  gbParsed = gbParsed.filter((r,i)=>!idxs.includes(i));
+  // 嘗試帶入會員
+  if(cust && cust!=="（未填顧客）"){
+    const m=findMemberForRow(cust,"","");
+    if(m) selectSaleMember(m.id);
+  }
+  renderGbPreview(); renderSoCart();
+  switchView("sales");
+  toast("已將「"+cust+"」的團購品加入購物車，可再掃描／加入現場商品，最後一起結帳");
+  setTimeout(()=>{ const el=$("#soScan"); if(el) el.focus(); },100);
 }
 function findMemberForRow(name, phone, lineId){
   // 優先序：電話（正規化）→ LINE 暱稱欄 → 顧客欄（比對姓名或暱稱）
@@ -4608,6 +4661,9 @@ function bindEvents(){
     gbParsed.forEach(r=>{ if(gbNorm(r.rawName)===gbNorm(nm)) r.code=code; });
     if(code) state.gbMap[gbNorm(nm)]=code; else delete state.gbMap[gbNorm(nm)];
     saveState(); renderGbPreview();
+  });
+  $("#gbPreviewBody").addEventListener("click",e=>{
+    const btn=e.target.closest(".gb-tocart"); if(btn) gbSendCustomerToCart(btn.dataset.cust);
   });
   $("#gbBatches").addEventListener("click",e=>{ if(e.target.classList.contains("gb-undo")) gbUndoBatch(e.target.dataset.batch); });
   $("#soCamBtn").addEventListener("click",()=>openCamera("sale"));
