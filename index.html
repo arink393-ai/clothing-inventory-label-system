@@ -582,6 +582,10 @@
       <input id="shopName" placeholder="輸入店名（印在吊牌上）" maxlength="20">
     </div>
     <div class="auth-box" id="authBox" style="display:none">
+      <span class="sync-badge" id="syncBadge" style="display:none;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin-right:10px" title="雲端同步狀態">
+        <span id="syncDot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block"></span>
+        <span id="syncBadgeText">未連線</span>
+      </span>
       <span class="auth-who" id="authWho"></span>
       <button class="btn sm ghost" id="logoutBtn">登出</button>
     </div>
@@ -649,6 +653,12 @@
     <button class="btn sm" id="backupNow">立即備份</button>
     <button class="btn sm ghost" id="backupLater">稍後</button>
   </span>
+</div>
+
+<div id="lowStockBanner" style="display:none;background:#fdf3e7;border-bottom:1px solid #e8cfa0;color:#7a4a10;padding:9px 16px;font-size:13.5px;align-items:center;gap:10px;justify-content:center;flex-wrap:wrap">
+  <span id="lowStockBannerText">⚠️ 有商品庫存偏低</span>
+  <button type="button" class="btn sm" id="lowStockBannerGo" style="padding:3px 10px">查看補貨建議</button>
+  <button type="button" class="btn sm ghost" id="lowStockBannerX" style="padding:3px 10px" title="今日不再提醒">✕</button>
 </div>
 
 <main>
@@ -1600,9 +1610,16 @@ function saveSyncCfg(c){ syncCfg=c; try{ localStorage.setItem(SYNC_CFG_KEY, JSON
 function setSyncStatus(s, msg){
   syncStatus=s;
   const el=document.getElementById("syncStatus");
-  if(el){
-    const map={off:["未連線","var(--muted)"],connecting:["連線中…","var(--warn)"],on:["已連線・同步中","var(--ok)"],error:["連線異常","var(--price)"]};
-    const [t,c]=map[s]||map.off; el.textContent=(msg||t); el.style.color=c;
+  const map={off:["未連線","var(--muted)"],connecting:["連線中…","var(--warn)"],on:["已連線・同步中","var(--ok)"],error:["連線異常","var(--price)"]};
+  const [t,c]=map[s]||map.off;
+  if(el){ el.textContent=(msg||t); el.style.color=c; }
+  const badge=document.getElementById("syncBadge");
+  if(badge){
+    const cfg=(typeof syncCfg!=="undefined"&&syncCfg)?syncCfg:loadSyncCfg();
+    badge.style.display = (cfg && cfg.url) ? "inline-flex" : "none";
+    const dot=document.getElementById("syncDot"), txt=document.getElementById("syncBadgeText");
+    if(dot) dot.style.background=c;
+    if(txt) txt.textContent = s==="on"?"雲端同步中":(s==="connecting"?"連線中":(s==="error"?"同步異常":"未連線"));
   }
 }
 async function syncLogin(){
@@ -1685,6 +1702,27 @@ const $ = s=>document.querySelector(s);
 const $$ = s=>document.querySelectorAll(s);
 const esc = s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+function lowStockCount(){
+  const th=Math.max(0,parseInt(state.lowStock)||0);
+  let n=0;
+  (state.products||[]).forEach(p=>{
+    if(hasVariants(p)){ p.variants.forEach(v=>{ if((parseInt(v.stock)||0)<=th) n++; }); }
+    else { if((parseInt(p.stock)||0)<=th) n++; }
+  });
+  return n;
+}
+function checkLowStockReminder(){
+  const banner=$("#lowStockBanner"); if(!banner) return;
+  const dismissKey="lowStockDismiss_"+todayStr();
+  let dismissed=false; try{ dismissed = sessionStorage.getItem(dismissKey)==="1"; }catch(e){}
+  const n=lowStockCount();
+  if(n>0 && !dismissed){
+    $("#lowStockBannerText").textContent="⚠️ 有 "+n+" 項商品庫存偏低（≤"+(Math.max(0,parseInt(state.lowStock)||0))+"件）";
+    banner.style.display="flex";
+  }else{
+    banner.style.display="none";
+  }
+}
 function toast(msg){
   const t=$("#toast"); t.textContent=msg; t.classList.add("show");
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2200);
@@ -1806,11 +1844,18 @@ function renderInventory(){
     if(foot) foot.innerHTML="";
     return;
   }
+  const productStockCost=p=> hasVariants(p) ? p.variants.reduce((s,v)=>s+variantCost(p,v)*(parseInt(v.stock)||0),0) : (p.cost||0)*(p.stock||0);
+  const productAvgCost=p=>{
+    if(!hasVariants(p)) return p.cost||0;
+    const totalStock=p.variants.reduce((s,v)=>s+(parseInt(v.stock)||0),0);
+    if(totalStock>0) return productStockCost(p)/totalStock;
+    return p.variants.length ? p.variants.reduce((s,v)=>s+variantCost(p,v),0)/p.variants.length : (p.cost||0);
+  };
   body.innerHTML = rows.map(p=>{
-    const cost=p.cost||0, price=p.price||0;
+    const cost=hasVariants(p)?productAvgCost(p):(p.cost||0), price=p.price||0;
     const margin = price>0 ? ((price-cost)/price*100) : 0;
     const mColor = cost<=0 ? "var(--muted)" : (margin<20?"var(--price)":(margin<40?"var(--warn)":"var(--ok)"));
-    const mTxt = cost<=0 ? "—" : margin.toFixed(0)+"%";
+    const mTxt = cost<=0 ? "—" : margin.toFixed(0)+"%"+(hasVariants(p)?"（均）":"");
     const vchips = hasVariants(p) ? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:6px">`+
         p.variants.map(v=>`<span style="display:inline-flex;align-items:center;gap:3px"><span class="cat-pill" style="font-size:10.5px">${esc(v.vname)}</span><input class="v-stock-in" data-vcode="${esc(v.code)}" type="number" min="0" value="${parseInt(v.stock)||0}" style="width:48px;border:1px solid var(--line);border-radius:6px;padding:3px 5px;font-family:var(--mono);text-align:right;background:#fff"></span>`).join("")+`</div>` : "";
     const stockCell = hasVariants(p)
@@ -1825,7 +1870,7 @@ function renderInventory(){
       <td style="text-align:right">${stockCell}</td>
       <td style="text-align:right" class="mono">${p.base.toLocaleString()}</td>
       <td style="text-align:right"><input class="price-in mono" type="number" min="0" value="${price}"></td>
-      <td style="text-align:right"><input class="cost-in mono" type="number" min="0" value="${cost}" placeholder="0"></td>
+      <td style="text-align:right"><input class="cost-in mono" type="number" min="0" value="${cost}" placeholder="0"${hasVariants(p)?' disabled title="各規格可能有不同成本，請到「編輯」視窗設定，或用進貨掃該規格條碼自動記錄"':''}></td>
       <td style="text-align:right" class="mono" title="(售價−成本)/售價"><span style="color:${mColor};font-weight:700">${mTxt}</span></td>
       <td><div class="row-actions">
         <button class="btn sm ghost act-edit">編輯</button>
@@ -1835,9 +1880,9 @@ function renderInventory(){
 
   if(foot){
     const totQty   = rows.reduce((s,p)=>s+(p.stock||0),0);
-    const stockCost= rows.reduce((s,p)=>s+(p.cost||0)*(p.stock||0),0);
+    const stockCost= rows.reduce((s,p)=>s+productStockCost(p),0);
     const retail   = rows.reduce((s,p)=>s+(p.price||0)*(p.stock||0),0);
-    const estProfit= rows.reduce((s,p)=>s+((p.price||0)-(p.cost||0))*(p.stock||0),0);
+    const estProfit= retail - stockCost;
     const filtered = (rows.length!==state.products.length);
     foot.innerHTML=`<tr class="inv-foot"><td colspan="10">
       <div class="invfoot-wrap">
@@ -2046,6 +2091,7 @@ function doScan(raw){
       <div class="r-name">${esc(p.name)}${v?`　<span style="font-size:18px;color:var(--muted)">${esc(v.vname)}</span>`:""}</div>
       <div class="r-price"><small>$</small>${p.price.toLocaleString()}</div>
       <div class="r-base">底價 $${p.base.toLocaleString()}　|　庫存 ${stockTxt}</div>
+      ${p.desc?`<div class="r-desc" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);color:var(--muted);font-size:14px;line-height:1.5">${esc(p.desc)}</div>`:""}
       <div class="r-code">${esc(v?v.code:p.code)}</div>`;
     recent = [p, ...recent.filter(x=>x.code!==p.code)].slice(0,6);
     renderRecent();
@@ -2358,6 +2404,11 @@ function stockAddByCode(code, delta){
   if(r.variant){ r.variant.stock=(parseInt(r.variant.stock)||0)+delta; recomputeStock(r.product); }
   else { r.product.stock=(parseInt(r.product.stock)||0)+delta; }
 }
+// 變體若有自己的成本就用變體的，否則沿用款式（商品）層級的成本
+function variantCost(p, v){
+  if(v && v.cost!=null && v.cost!=="" && !isNaN(v.cost)) return Number(v.cost);
+  return p.cost||0;
+}
 function nextVariantCode(p){
   const used=new Set((p.variants||[]).map(v=>String(v.code||"").toLowerCase()));
   let n=(p.variants||[]).length+1, code;
@@ -2420,7 +2471,7 @@ function savePurchase(){
   const order={ id:orderNo("P",date,state.purchases), date, time:nowTime(),
     items:poCart.map(i=>({...i})), total:poCart.reduce((s,i)=>s+i.qty*i.cost,0),
     note:$("#poNote").value.trim() };
-  order.items.forEach(i=>{ stockAddByCode(i.code, +i.qty); const r=resolveCode(i.code); if(r && i.cost>0) r.product.cost=i.cost; });
+  order.items.forEach(i=>{ stockAddByCode(i.code, +i.qty); const r=resolveCode(i.code); if(r && i.cost>0){ if(r.variant) r.variant.cost=i.cost; else r.product.cost=i.cost; } });
   state.purchases.push(order);
   poCart=[]; $("#poNote").value="";
   saveState(); renderPoCart(); renderInventory(); renderPoHistory(); renderReport();
@@ -2501,10 +2552,15 @@ let soCart=[];
 function promoTypeOf(p){ return (p && p.promoType) ? p.promoType : ((p && p.bulkQty>0) ? "bulk" : "none"); }
 function secondLabel(pct){ if(pct===50) return "第二件半價"; const z=(100-pct)/10; return "第二件"+(Number.isInteger(z)?z:z.toFixed(1))+"折"; }
 function soLinePrice(code){ const it=soCart.find(x=>x.code===code); if(it) return it.price; const p=findProduct(code); return p?p.price:0; }
-// 單品活動：回傳此列的標籤與提示（顯示用）
+function pooledStyleQty(productCode){
+  let q=0;
+  soCart.forEach(it=>{ if(it.manual) return; const rr=resolveCode(it.code); if(rr && rr.product.code===productCode) q+=it.qty; });
+  return q;
+}
+// 單品活動：回傳此列的標籤與提示（顯示用；件數以同款式合併計算）
 function linePromoDisplay(it){
   const p=(resolveCode(it.code)||{}).product; if(!p||it.manual) return {tag:"",hint:""};
-  const t=promoTypeOf(p), q=it.qty;
+  const t=promoTypeOf(p), q=pooledStyleQty(p.code);
   if(t==="bulk" && p.bulkQty>0 && p.bulkPrice>0){
     return q>=p.bulkQty ? {tag:`量販 每件$${fmt(p.bulkPrice)}`,hint:""} : {tag:"",hint:`再 ${p.bulkQty-q} 件每件$${fmt(p.bulkPrice)}`};
   }
@@ -2521,19 +2577,34 @@ function computePromos(){
   let discount=0; const labels=[];
   const remaining={};
   soCart.forEach(it=>{ remaining[it.code]=(remaining[it.code]||0)+it.qty; });
-  // 同品項
+  // 同品項（依「款式」分組，讓同款不同尺寸/顏色的件數可以合併計算促銷）
+  const styleGroups={};
   soCart.forEach(it=>{
     if(it.manual) return;
-    const p=(resolveCode(it.code)||{}).product; if(!p) return;
-    const t=promoTypeOf(p), unit=it.price, q=it.qty;
+    const rr=resolveCode(it.code); if(!rr) return;
+    const p=rr.product;
+    const g=styleGroups[p.code] || (styleGroups[p.code]={product:p, units:[]});
+    for(let k=0;k<it.qty;k++) g.units.push(it.price);
+  });
+  Object.values(styleGroups).forEach(g=>{
+    const p=g.product, t=promoTypeOf(p), q=g.units.length; if(!q) return;
     if(t==="bulk" && p.bulkQty>0 && p.bulkPrice>0 && q>=p.bulkQty){
-      const sv=q*(unit-p.bulkPrice); if(sv>0){ discount+=sv; labels.push(`${it.name} 量販`); }
+      let sv=0; g.units.forEach(price=>{ sv+=(price-p.bulkPrice); });
+      if(sv>0){ discount+=sv; labels.push(`${p.name} 量販`); }
     }else if(t==="second"){
       const pct=p.secondPercent!=null?p.secondPercent:50; const pairs=Math.floor(q/2);
-      const sv=Math.round(pairs*unit*(pct/100)); if(sv>0){ discount+=sv; labels.push(`${it.name} ${secondLabel(pct)}`); }
+      if(pairs>0){
+        const sorted=[...g.units].sort((a,b)=>a-b); // 折扣套用在較低價的一件（同價則無差異）
+        let sv=0; for(let i=0;i<pairs;i++){ sv+=Math.round(sorted[i]*(pct/100)); }
+        if(sv>0){ discount+=sv; labels.push(`${p.name} ${secondLabel(pct)}`); }
+      }
     }else if(t==="bogo"){
       const bx=p.bogoBuy||1,by=p.bogoFree||1,grp=bx+by; const free=Math.floor(q/grp)*by;
-      const sv=free*unit; if(sv>0){ discount+=sv; labels.push(`${it.name} 買${bx}送${by}`); }
+      if(free>0){
+        const sorted=[...g.units].sort((a,b)=>a-b); // 送最低價的那幾件（同價則無差異）
+        let sv=0; for(let i=0;i<free;i++){ sv+=sorted[i]; }
+        if(sv>0){ discount+=sv; labels.push(`${p.name} 買${bx}送${by}`); }
+      }
     }
   });
   // A+B 組合（支援分類）
@@ -2638,7 +2709,7 @@ function addResolvedToCart(p, v){
   const nm   = v ? (p.name+"（"+v.vname+"）") : p.name;
   let ex=soCart.find(i=>i.code===code && !i.fromGb);
   if(ex){ ex.qty+=1; }
-  else { soCart.push({code, name:nm, qty:1, price:p.price, cost:p.cost||0, manual:false}); }
+  else { soCart.push({code, name:nm, qty:1, price:p.price, cost:variantCost(p,v), manual:false}); }
   renderSoCart();
 }
 /* 選規格視窗：onPick(variant) 由呼叫端決定加到哪個購物車 */
@@ -2979,7 +3050,7 @@ function gbSendCustomerToCart(cust){
     const code=v?v.code:p.code, nm=v?(p.name+"（"+v.vname+"）"):p.name;
     const price=r.price!=null?r.price:p.price;
     const ex=soCart.find(i=>i.code===code && !i.manual && i.fromGb && i.gbCustomer===cust);
-    if(ex) ex.qty+=r.qty; else soCart.push({code, name:nm, qty:r.qty, price, cost:p.cost||0, manual:false, fromGb:true, gbCustomer:cust});
+    if(ex) ex.qty+=r.qty; else soCart.push({code, name:nm, qty:r.qty, price, cost:variantCost(p,v), manual:false, fromGb:true, gbCustomer:cust});
   });
   // 從待匯入清單移除，避免之後「確認匯入」時重複建單
   gbParsed = gbParsed.filter((r,i)=>!idxs.includes(i));
@@ -3029,7 +3100,7 @@ function gbCommit(){
   const batchId="GB"+Date.now().toString(36);
   const mkItem=r=>{
     if(r.code==="__NOSTOCK__"){ return {code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, nostock:true}; }
-    const rr=resolveCode(r.code), p=rr.product; return {code:r.code, name:(rr.variant?p.name+"（"+rr.variant.vname+"）":p.name), qty:r.qty, price:(r.price!=null?r.price:p.price), cost:p.cost||0, manual:false};
+    const rr=resolveCode(r.code), p=rr.product; return {code:r.code, name:(rr.variant?p.name+"（"+rr.variant.vname+"）":p.name), qty:r.qty, price:(r.price!=null?r.price:p.price), cost:variantCost(p,rr.variant), manual:false};
   };
   let created=0, cnt=0, newMembers=0, linked=0;
   if(mode==="perCust"){
@@ -3270,7 +3341,7 @@ function retAddItem(code, qty){
 function retAddResolved(p, v, qty){
   const code=v?v.code:p.code, nm=v?(p.name+"（"+v.vname+"）"):p.name;
   const ex=retCart.find(i=>i.code===code);
-  if(ex) ex.qty+=qty; else retCart.push({code, name:nm, qty, amount:retUnitAmount(p), cost:p.cost||0});
+  if(ex) ex.qty+=qty; else retCart.push({code, name:nm, qty, amount:retUnitAmount(p), cost:variantCost(p,v)});
   renderRetCart();
 }
 function loadReturnRef(refId){
@@ -3967,6 +4038,7 @@ function doLogin(){
   $("#loginPass").value="";
   $("#loginOverlay").classList.remove("show");
   applyRoleVisibility();
+  checkLowStockReminder();
 }
 function doLogout(){
   currentRole=null; currentStaffId="";
@@ -4516,6 +4588,8 @@ function bindEvents(){
   $("#saveGemini").addEventListener("click",saveGeminiSettings);
   $("#syncConnect").addEventListener("click",saveSyncSettings);
   $("#syncDisconnect").addEventListener("click",disconnectSync);
+  $("#lowStockBannerGo").addEventListener("click",()=>{ switchView("purchase"); $("#lowStockBanner").style.display="none"; });
+  $("#lowStockBannerX").addEventListener("click",()=>{ $("#lowStockBanner").style.display="none"; try{ sessionStorage.setItem("lowStockDismiss_"+todayStr(),"1"); }catch(e){} });
   $("#m_promoType").addEventListener("change",syncPromoFields);
   $("#m_addVariant").addEventListener("click",()=>{
     const p=editingCode?state.products.find(x=>x.code===editingCode):null;
@@ -4523,7 +4597,7 @@ function bindEvents(){
     const used=new Set(modalVariants.map(v=>String(v.code||"").toLowerCase()));
     let n=modalVariants.length+1, code;
     do{ code=baseCode+"-"+String(n).padStart(2,"0"); n++; }while(used.has(code.toLowerCase()));
-    modalVariants.push({vname:"", code, stock:0});
+    modalVariants.push({vname:"", code, stock:0, cost:""});
     renderModalVariants();
   });
   $("#m_variantRows").addEventListener("input",e=>{
@@ -4532,6 +4606,7 @@ function bindEvents(){
     if(e.target.classList.contains("v-name")) v.vname=e.target.value;
     if(e.target.classList.contains("v-code")) v.code=e.target.value.trim();
     if(e.target.classList.contains("v-stock")){ v.stock=Math.max(0,parseInt(e.target.value)||0); syncVariantTotal(); }
+    if(e.target.classList.contains("v-cost")){ v.cost = e.target.value===""?"":Math.max(0,Number(e.target.value)||0); }
   });
   $("#m_variantRows").addEventListener("click",e=>{
     if(!e.target.classList.contains("v-del")) return;
@@ -4822,6 +4897,7 @@ function renderModalVariants(){
       <input class="v-name" placeholder="規格（如 黑/M）" value="${esc(v.vname||"")}" style="flex:1;min-width:96px">
       <input class="v-code mono" placeholder="條碼" value="${esc(v.code||"")}" style="flex:1;min-width:96px">
       <input class="v-stock mono" type="number" min="0" value="${parseInt(v.stock)||0}" style="width:62px" title="庫存">
+      <input class="v-cost mono" type="number" min="0" value="${v.cost!=null&&v.cost!==''?v.cost:''}" placeholder="成本" style="width:70px" title="此規格自己的成本（留空＝沿用商品成本）">
       <button type="button" class="btn sm ghost v-del" title="刪除此規格">刪</button>
     </div>`).join("");
   syncVariantTotal();
@@ -4856,7 +4932,7 @@ function openModal(code, presetCode){
     $("#m_secondPercent").value=(p.secondPercent!=null?p.secondPercent:50);
     $("#m_bogoBuy").value=p.bogoBuy||1; $("#m_bogoFree").value=p.bogoFree||1;
     refreshConsignorOptions(p.consignor||""); $("#m_consignRate").value=(p.consignRate||p.consignRate===0)?(p.consignRate||""):"";
-    modalVariants = Array.isArray(p.variants) ? p.variants.map(v=>({vname:v.vname, code:v.code, stock:parseInt(v.stock)||0})) : [];
+    modalVariants = Array.isArray(p.variants) ? p.variants.map(v=>({vname:v.vname, code:v.code, stock:parseInt(v.stock)||0, cost:(v.cost!=null?v.cost:"")})) : [];
     if($("#m_desc")) $("#m_desc").value=p.desc||"";
     if($("#m_quick")) $("#m_quick").style.display="none";
   }else{
@@ -4903,7 +4979,7 @@ function saveModal(){
   const consignor=$("#m_consignor").value.trim();
   const consignRate=Number($("#m_consignRate").value)||0;
   // 收集／驗證變體
-  const vrows=modalVariants.map(v=>({vname:String(v.vname||"").trim(), code:String(v.code||"").trim(), stock:Math.max(0,parseInt(v.stock)||0)}))
+  const vrows=modalVariants.map(v=>({vname:String(v.vname||"").trim(), code:String(v.code||"").trim(), stock:Math.max(0,parseInt(v.stock)||0), cost:(v.cost!=null&&v.cost!==""?Math.max(0,Number(v.cost)||0):"")}))
                            .filter(v=>v.vname||v.code);
   for(const v of vrows){
     if(!v.vname){ toast("有變體缺「規格名稱」，請補上或刪除該列"); return; }
@@ -5060,11 +5136,16 @@ function saveGeminiSettings(){
   try{ currentStaffId=localStorage.getItem(STAFF_KEY)||""; }catch(e){}
   if(savedRole==="admin" || savedRole==="staff"){
     currentRole=savedRole; $("#loginOverlay").classList.remove("show"); applyRoleVisibility();
+    checkLowStockReminder();
   }else{
     $("#loginOverlay").classList.add("show"); setTimeout(()=>$("#loginUser").focus(),80);
   }
   // 雲端同步：若已設定且啟用，開機自動連線
-  try{ const c=loadSyncCfg(); if(c && c.enabled!==false && c.url && c.key && c.email && c.password){ startSync(true); } }catch(e){}
+  try{
+    const c=loadSyncCfg();
+    setSyncStatus("off");
+    if(c && c.enabled!==false && c.url && c.key && c.email && c.password){ startSync(true); }
+  }catch(e){}
   document.addEventListener("visibilitychange",()=>{ if(!document.hidden && syncOn) syncTick(); });
 })();
 </script>
