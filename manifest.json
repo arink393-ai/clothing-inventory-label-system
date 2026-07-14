@@ -1,0 +1,17 @@
+{
+  "name": "幸せ雑貨店・進銷存",
+  "short_name": "幸せ進銷存",
+  "description": "幸せ雑貨店服飾進銷存標籤系統",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ECE7DD",
+  "theme_color": "#27408B",
+  "lang": "zh-TW",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
