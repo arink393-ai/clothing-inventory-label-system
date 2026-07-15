@@ -247,6 +247,33 @@
     opacity:0;pointer-events:none;transition:.25s;z-index:99;box-shadow:0 8px 30px -8px rgba(0,0,0,.5)}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+  .onb-fab{position:fixed;right:18px;bottom:24px;z-index:70;width:50px;height:50px;border-radius:50%;
+    background:var(--stamp);color:#fff;border:none;box-shadow:0 8px 22px -6px rgba(0,0,0,.45);
+    font-size:21px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .onb-fab .onb-badge{position:absolute;top:-3px;right:-3px;background:var(--price);color:#fff;border-radius:50%;
+    min-width:18px;height:18px;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px}
+  .onb-panel{position:fixed;right:18px;bottom:84px;z-index:71;width:min(320px,calc(100vw - 36px));
+    background:var(--surface);border:1px solid var(--line-strong);border-radius:14px;
+    box-shadow:0 24px 55px -16px rgba(0,0,0,.45);padding:16px;display:none;max-height:68vh;overflow-y:auto}
+  .onb-panel.show{display:block}
+  .onb-panel h3{font-size:15px;margin-bottom:2px}
+  .onb-panel .onb-close{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer}
+  .onb-progress{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .onb-item{display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line)}
+  .onb-item:last-child{border-bottom:none}
+  .onb-check{width:20px;height:20px;border-radius:50%;border:2px solid var(--line-strong);flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;margin-top:1px}
+  .onb-item.done .onb-check{background:var(--ok);border-color:var(--ok)}
+  .onb-item .onb-txt{flex:1;min-width:0}
+  .onb-item .onb-title{font-size:13.5px;font-weight:700}
+  .onb-item.done .onb-title{color:var(--muted);text-decoration:line-through}
+  .onb-item .onb-desc{font-size:12px;color:var(--muted);margin-top:2px}
+  .onb-item .onb-go{font-size:11.5px;color:var(--stamp);font-weight:700;cursor:pointer;margin-top:4px;display:inline-block}
+  @media(max-width:760px){
+    .onb-fab{bottom:calc(90px + env(safe-area-inset-bottom))}
+    .onb-panel{bottom:calc(150px + env(safe-area-inset-bottom))}
+  }
+
   /* ===== Modal ===== */
   .modal-bg{position:fixed;inset:0;background:rgba(42,39,34,.45);display:none;place-items:center;z-index:80;padding:20px}
   .modal-bg.show{display:grid}
@@ -781,6 +808,14 @@
       </label>
       <p class="hint" id="lastBackupInfo" style="margin:10px 0 0">尚未備份</p>
       <p class="hint" style="margin:4px 0 0">「備份」會下載一個 .json 檔；「還原」會用該檔<b>覆蓋</b>目前全部資料；「清空全部資料」會把所有資料刪除歸零（含會員），請務必先備份。</p>
+    </div>
+
+    <div class="panel" style="border:1px solid #e2c2c2;background:#fdf5f5">
+      <h2><span class="num" style="background:var(--price)">出廠</span>出廠重置（給新商家使用）</h2>
+      <p class="sub">跟上面的「清空全部資料」不一樣：這個<b>連密碼、AI 金鑰、雲端同步設定、店名、分類、員工都會恢復成初始狀態</b>，等於回到全新安裝的狀態。用途是把系統交給<b>別的商家</b>之前，確保不會帶到你自己的任何設定或機密資料。執行後會自動登出，需要用預設密碼（admin/0000）重新登入。</p>
+      <div class="toolbar">
+        <button class="btn danger" id="factoryReset">🏭 出廠重置</button>
+      </div>
     </div>
 
     <div class="panel">
@@ -1452,6 +1487,23 @@
   </div>
 </div>
 
+<!-- 首次登入：引導變更預設密碼 -->
+<div class="modal-bg" id="pwWizardBg">
+  <div class="modal">
+    <h3>🔒 請設定專屬密碼</h3>
+    <p class="hint" style="margin-bottom:12px">系統偵測到目前還在使用<b>預設密碼</b>（admin/0000 或 staff/1234）。這組密碼公開可查，建議現在就改成只有你們知道的密碼，之後隨時可以到「商品管理 → 登入密碼設定」再調整。</p>
+    <div class="field"><label>新管理密碼</label><input id="pwWizardAdmin" type="text" autocomplete="off" placeholder="至少 4 碼"></div>
+    <div class="field"><label>再輸入一次</label><input id="pwWizardAdmin2" type="text" autocomplete="off" placeholder="再次輸入管理密碼"></div>
+    <div class="field"><label>新店鋪人員密碼</label><input id="pwWizardStaff" type="text" autocomplete="off" placeholder="至少 4 碼"></div>
+    <div class="field"><label>再輸入一次</label><input id="pwWizardStaff2" type="text" autocomplete="off" placeholder="再次輸入店鋪密碼"></div>
+    <p class="hint" id="pwWizardMsg" style="display:none;color:var(--price);margin-top:2px"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="pwWizardSkip">稍後再說</button>
+      <button class="btn primary" id="pwWizardSave">儲存新密碼</button>
+    </div>
+  </div>
+</div>
+
 <!-- 會員消費紀錄 Modal -->
 <div class="modal-bg" id="memHistBg">
   <div class="modal wide">
@@ -1476,6 +1528,16 @@
 </div>
 
 <div id="toast"></div>
+
+<button type="button" class="onb-fab" id="onbFab" title="新手設定引導" style="display:none">
+  💡<span class="onb-badge" id="onbBadge" style="display:none">0</span>
+</button>
+<div class="onb-panel" id="onbPanel">
+  <button type="button" class="onb-close" id="onbClose" title="關閉">✕</button>
+  <h3>👋 新手設定引導</h3>
+  <p class="onb-progress" id="onbProgress"></p>
+  <div id="onbList"></div>
+</div>
 
 <script>
 /* ============================================================
@@ -1576,6 +1638,7 @@ async function saveState(){
   const note=document.getElementById("storageNote");
   if(note) note.style.display = storageOK ? "none":"flex";
   if(typeof syncQueuePush==="function") syncQueuePush();
+  if(typeof renderOnbList==="function" && $("#onbFab") && $("#onbFab").style.display!=="none") renderOnbList();
 }
 async function loadState(){
   try{
@@ -1817,6 +1880,138 @@ async function clearAllData(){
   if($("#lastBackupInfo")) $("#lastBackupInfo").textContent=lastBackupText();
   checkBackupReminder();
   toast(backupFirst ? "已備份並清空全部資料" : "已清空全部資料");
+}
+/* ---------- 出廠重置：交給新商家前，恢復成全新安裝狀態 ---------- */
+async function factoryReset(){
+  if(!confirm("⚠ 出廠重置會把「所有資料」與「所有設定」都恢復成初始狀態：\n\n・商品／進貨／銷售／退貨／會員／點數\n・密碼（恢復成預設 admin/0000、staff/1234）\n・AI 拍照辨識金鑰\n・店名、分類、員工名單\n\n全部清空且無法復原。確定要繼續嗎？")) return;
+  if(!confirm("再次確認：這比「清空全部資料」更徹底，連你自己的密碼跟 AI 金鑰都會被清掉。\n\n真的要出廠重置嗎？")) return;
+  const doBackup = confirm("要不要先備份目前的資料？\n「確定」＝先下載備份再重置（建議）\n「取消」＝不備份、直接重置");
+  if(doBackup){
+    const ok = await backupJson();
+    if(!ok){ toast("備份未完成，已取消出廠重置（資料保留）"); return; }
+  }
+  state = {
+    products: [], purchases: [], sales: [], returns: [], members: [],
+    combos: [], staff: [], payrolls: [], shifts: [],
+    consignPayments: [], consignPaid: {}, consignors: [],
+    expenses: [], stocktakes: [], cashCounts: [],
+    adminPass: "0000", staffPass: "1234",
+    gbMap: {}, geminiKey: "", geminiModel: "gemini-flash-latest",
+    shopName: "", categories: DEFAULT_CATEGORIES.map(c=>({...c})),
+    markup: 15, roundTo: 10, pointsPer: 100, pointValue: 1, lowStock: 3,
+    lastBackup: null, backupAtCount: 0, autoReceipt: true,
+    seeded: true,
+  };
+  soMemberId=""; soCart=[]; poCart=[]; retCart=[]; retRefSale=null; retRefId="";
+  // 清掉本機的雲端同步設定，避免新商家一開機就連到你原本的 Supabase 專案
+  try{ localStorage.removeItem(SYNC_CFG_KEY); }catch(e){}
+  syncCfg=null; stopSync();
+  await saveState();
+  toast("出廠重置完成，即將登出…");
+  setTimeout(()=>{ doLogout(); location.reload(); }, 1000);
+}
+/* ---------- 首次登入：引導變更預設密碼 ---------- */
+function checkFirstLoginPasswordPrompt(){
+  if(currentRole!=="admin") return; // 店鋪人員無法改密碼，只提醒管理員
+  const stillDefault = (state.adminPass||"0000")==="0000" || (state.staffPass||"1234")==="1234";
+  const bg=$("#pwWizardBg"); if(!bg || !stillDefault) return;
+  $("#pwWizardAdmin").value=""; $("#pwWizardAdmin2").value="";
+  $("#pwWizardStaff").value=""; $("#pwWizardStaff2").value="";
+  $("#pwWizardMsg").style.display="none";
+  bg.classList.add("show");
+}
+function savePasswordWizard(){
+  const a1=$("#pwWizardAdmin").value.trim(), a2=$("#pwWizardAdmin2").value.trim();
+  const s1=$("#pwWizardStaff").value.trim(), s2=$("#pwWizardStaff2").value.trim();
+  const msg=$("#pwWizardMsg");
+  const showErr=t=>{ msg.textContent=t; msg.style.display="block"; };
+  if(!a1||!s1){ showErr("請輸入管理密碼與店鋪密碼"); return; }
+  if(a1.length<4||s1.length<4){ showErr("密碼至少需要 4 碼"); return; }
+  if(a1!==a2){ showErr("兩次輸入的管理密碼不一致"); return; }
+  if(s1!==s2){ showErr("兩次輸入的店鋪密碼不一致"); return; }
+  if(a1==="0000"||s1==="1234"){ showErr("請設定跟預設不同的新密碼"); return; }
+  if(a1===s1){ showErr("管理密碼與店鋪密碼建議不要設成一樣"); return; }
+  state.adminPass=a1; state.staffPass=s1;
+  saveState();
+  $("#pwWizardBg").classList.remove("show");
+  toast("密碼已更新，請牢記新密碼");
+  if(typeof syncSettingsUI==="function") syncSettingsUI();
+}
+function skipPasswordWizard(){
+  $("#pwWizardBg").classList.remove("show");
+  toast("提醒：目前仍是預設密碼，建議盡快到「設定」變更");
+}
+/* ---------- 新手設定引導清單 ---------- */
+const ONB_STEPS = [
+  { id:"pw", title:"設定專屬密碼", required:true,
+    desc:"目前密碼是公開可查的預設值，建議先改成只有你們知道的密碼。",
+    done: ()=> (state.adminPass||"0000")!=="0000" && (state.staffPass||"1234")!=="1234",
+    go: ()=>{ const bg=$("#pwWizardBg"); if(bg) bg.classList.add("show"); } },
+  { id:"shop", title:"設定店名", required:true,
+    desc:"店名會印在吊牌、收據跟月結單上。",
+    done: ()=> !!(state.shopName && state.shopName.trim()),
+    go: ()=>{ switchView("inventory"); setTimeout(()=>{ const el=$("#shopName"); if(el){ el.scrollIntoView({behavior:"smooth",block:"center"}); el.focus(); } },150); } },
+  { id:"cat", title:"確認商品分類", required:false,
+    desc:"預設分類偏服飾業，可依你的商品類型調整、新增或刪除。",
+    done: ()=>{
+      if(!Array.isArray(state.categories) || !state.categories.length) return false;
+      const cur=state.categories.map(c=>c.name).sort().join(",");
+      const def=DEFAULT_CATEGORIES.map(c=>c.name).sort().join(",");
+      return cur!==def;
+    },
+    go: ()=>{ switchView("inventory"); } },
+  { id:"product", title:"新增第一項商品", required:true,
+    desc:"可以手動新增，或用「📷 掃碼新增」拍條碼快速建檔。",
+    done: ()=> (state.products||[]).length>0,
+    go: ()=>{ switchView("inventory"); setTimeout(()=>{ const el=$("#addBtn"); if(el) el.click(); },150); } },
+  { id:"sale", title:"完成第一筆結帳", required:true,
+    desc:"到「銷貨」加入商品、按結帳，熟悉基本操作流程。",
+    done: ()=> (state.sales||[]).length>0,
+    go: ()=>{ switchView("sales"); } },
+  { id:"ai", title:"（選用）設定 AI 拍照辨識", required:false,
+    desc:"新增商品時可拍照自動命名，需要一組免費 Gemini 金鑰。",
+    done: ()=> !!(state.geminiKey && state.geminiKey.trim()),
+    go: ()=>{ switchView("inventory"); setTimeout(()=>{ const el=$("#setGeminiKey"); if(el){ el.scrollIntoView({behavior:"smooth",block:"center"}); el.focus(); } },150); } },
+  { id:"sync", title:"（選用）設定多裝置雲端同步", required:false,
+    desc:"讓手機與電腦共用同一份資料，即時同步。",
+    done: ()=>{ const c=(typeof loadSyncCfg==="function")?loadSyncCfg():null; return !!(c && c.url && c.enabled!==false); },
+    go: ()=>{ switchView("inventory"); setTimeout(()=>{ const el=$("#syncUrl"); if(el){ el.scrollIntoView({behavior:"smooth",block:"center"}); el.focus(); } },150); } },
+];
+function onbRequiredRemaining(){ return ONB_STEPS.filter(s=>s.required && !s.done()).length; }
+function renderOnbList(){
+  const list=$("#onbList"); if(!list) return;
+  list.innerHTML = ONB_STEPS.map(s=>{
+    const done=s.done();
+    return `<div class="onb-item${done?' done':''}" data-id="${s.id}">
+      <span class="onb-check">${done?'✓':''}</span>
+      <div class="onb-txt">
+        <div class="onb-title">${esc(s.title)}</div>
+        <div class="onb-desc">${esc(s.desc)}</div>
+        ${done?'':`<span class="onb-go" data-id="${s.id}">前往設定 →</span>`}
+      </div>
+    </div>`;
+  }).join("");
+  const doneCount = ONB_STEPS.filter(s=>s.done()).length;
+  const prog=$("#onbProgress"); if(prog) prog.textContent = `已完成 ${doneCount} / ${ONB_STEPS.length} 項（含選用）`;
+  const remain = onbRequiredRemaining();
+  const badge=$("#onbBadge");
+  if(badge){ if(remain>0){ badge.style.display="flex"; badge.textContent=remain; } else { badge.style.display="none"; } }
+}
+function toggleOnbPanel(force){
+  const panel=$("#onbPanel"); if(!panel) return;
+  const show = force!=null ? force : !panel.classList.contains("show");
+  if(show){ renderOnbList(); panel.classList.add("show"); } else { panel.classList.remove("show"); }
+}
+function initOnboardingWidget(){
+  const fab=$("#onbFab"); if(!fab) return;
+  if(currentRole!=="admin"){ fab.style.display="none"; toggleOnbPanel(false); return; }
+  fab.style.display="flex";
+  renderOnbList();
+  let seen=false; try{ seen = localStorage.getItem("erp_onb_seen")==="1"; }catch(e){}
+  if(!seen){
+    toggleOnbPanel(true);
+    try{ localStorage.setItem("erp_onb_seen","1"); }catch(e){}
+  }
 }
 
 /* ============================================================
@@ -4040,6 +4235,8 @@ function doLogin(){
   $("#loginOverlay").classList.remove("show");
   applyRoleVisibility();
   checkLowStockReminder();
+  checkFirstLoginPasswordPrompt();
+  initOnboardingWidget();
 }
 function doLogout(){
   currentRole=null; currentStaffId="";
@@ -4047,6 +4244,8 @@ function doLogout(){
   $("#loginUser").value=""; $("#loginPass").value="";
   $("#loginOverlay").classList.add("show");
   if($("#authBox")) $("#authBox").style.display="none";
+  if($("#onbFab")) $("#onbFab").style.display="none";
+  if(typeof toggleOnbPanel==="function") toggleOnbPanel(false);
   setTimeout(()=>$("#loginUser").focus(),60);
 }
 
@@ -4665,6 +4864,16 @@ function bindEvents(){
   $("#exportXlsx").addEventListener("click",exportXlsx);
   $("#backupJson").addEventListener("click",backupJson);
   $("#clearAllData").addEventListener("click",clearAllData);
+  $("#factoryReset").addEventListener("click",factoryReset);
+  $("#pwWizardSave").addEventListener("click",savePasswordWizard);
+  $("#pwWizardSkip").addEventListener("click",skipPasswordWizard);
+  $("#onbFab").addEventListener("click",()=>toggleOnbPanel());
+  $("#onbClose").addEventListener("click",()=>toggleOnbPanel(false));
+  $("#onbList").addEventListener("click",e=>{
+    const go=e.target.closest(".onb-go"); if(!go) return;
+    const step=ONB_STEPS.find(s=>s.id===go.dataset.id);
+    if(step && step.go){ toggleOnbPanel(false); step.go(); }
+  });
   $("#restoreJson").addEventListener("change",e=>{ if(e.target.files[0]) restoreJson(e.target.files[0]); e.target.value=""; });
 
   // 標籤列印
@@ -5138,6 +5347,8 @@ function saveGeminiSettings(){
   if(savedRole==="admin" || savedRole==="staff"){
     currentRole=savedRole; $("#loginOverlay").classList.remove("show"); applyRoleVisibility();
     checkLowStockReminder();
+    checkFirstLoginPasswordPrompt();
+    initOnboardingWidget();
   }else{
     $("#loginOverlay").classList.add("show"); setTimeout(()=>$("#loginUser").focus(),80);
   }
