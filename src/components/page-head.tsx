@@ -1,0 +1,1 @@
+export function PageHead({title,description,children}:{title:string;description:string;children?:React.ReactNode}){return <div className="page-head"><div><h2>{title}</h2><p>{description}</p></div>{children&&<div className="actions">{children}</div>}</div>}

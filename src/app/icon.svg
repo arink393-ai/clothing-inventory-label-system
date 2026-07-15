@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#24231f"/>
+  <rect x="84" y="84" width="344" height="344" rx="86" fill="#27408b"/>
+  <path d="M171 153h170v34H171zm15 62h140v34H186zm-29 65h198v34H157zm44 64h110v34H201z" fill="#f8f5ed" opacity=".18"/>
+  <text x="256" y="329" text-anchor="middle" font-family="serif" font-size="220" font-weight="700" fill="#f8f5ed">幸</text>
+</svg>

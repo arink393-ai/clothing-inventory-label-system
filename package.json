@@ -1,0 +1,35 @@
+{
+  "name": "shiawase-clothing-erp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "backup": "zsh scripts/backup-supabase.zsh",
+    "backup:verify": "zsh scripts/verify-backup.zsh"
+  },
+  "dependencies": {
+    "@supabase/ssr": "latest",
+    "@supabase/supabase-js": "latest",
+    "@types/jsbarcode": "^3.11.4",
+    "jsbarcode": "^3.12.3",
+    "lucide-react": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "read-excel-file": "^9.3.1",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "supabase": "^2.109.1",
+    "typescript": "latest"
+  }
+}
