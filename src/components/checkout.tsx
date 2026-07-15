@@ -51,10 +51,14 @@ export function Checkout({
   products,
   members,
   points,
+  role,
+  approval,
 }: {
   products: CheckoutProduct[];
   members: CheckoutMember[];
   points: { enabled: boolean; spendAmount: number; pointValue: number };
+  role: string;
+  approval: { discountThresholdPercent: number; pinConfigured: boolean };
 }) {
   const [open, setOpen] = useState(false);
   const [requestId, setRequestId] = useState("");
@@ -65,6 +69,7 @@ export function Checkout({
   const [scanMessage, setScanMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [customerId, setCustomerId] = useState("");
   const [redeem, setRedeem] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
   const barcodeRef = useRef<HTMLInputElement>(null);
 
   const cart = useMemo(
@@ -78,6 +83,8 @@ export function Checkout({
   const actualRedeem = Math.min(redeem, maxRedeem);
   const pointsDiscount = actualRedeem * points.pointValue;
   const total = Math.max(0, subtotal - discount - pointsDiscount);
+  const discountPercent = subtotal > 0 ? (discount / subtotal) * 100 : 0;
+  const approvalRequired = discountPercent > approval.discountThresholdPercent;
   const earned = points.enabled && selectedMember ? Math.floor(total / points.spendAmount) : 0;
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = products.filter((product) =>
@@ -136,6 +143,7 @@ export function Checkout({
     setScanMessage(null);
     setCustomerId("");
     setRedeem(0);
+    setPaymentMethod("cash");
   }
 
   return <>
@@ -154,10 +162,14 @@ export function Checkout({
             <div className="field"><label htmlFor="discount">整單折扣</label><input id="discount" name="discount" type="number" min="0" max={subtotal} value={discount} onChange={(event) => { setDiscount(Math.max(0, event.target.valueAsNumber || 0)); setRedeem(0); }}/></div>
             {selectedMember && points.enabled && <div className="field"><label htmlFor="pointsToRedeem">折抵點數（可用 {selectedMember.points} 點）</label><input id="pointsToRedeem" name="pointsToRedeem" type="number" min="0" max={maxRedeem} step="1" value={actualRedeem} onChange={(event) => setRedeem(Math.max(0, Math.min(maxRedeem, event.target.valueAsNumber || 0)))}/><small>本次折抵 {money(pointsDiscount)}；結帳後預計累積 {earned} 點。</small></div>}
             {!selectedMember && <input type="hidden" name="pointsToRedeem" value="0"/>}
-            <div className="field"><label htmlFor="paymentMethod">付款方式</label><select id="paymentMethod" name="paymentMethod" defaultValue="cash"><option value="cash">現金</option><option value="transfer">銀行轉帳</option><option value="line_transfer">LINE 轉帳</option><option value="card">信用卡</option></select></div>
+            {approvalRequired && <div className="notice approval-notice">本次折扣 {discountPercent.toFixed(1)}%，超過 {approval.discountThresholdPercent}% 核准門檻。{role === "cashier" ? approval.pinConfigured ? "請輸入店長 PIN。" : "尚未設定店長 PIN，請通知店主。" : "將以店主／店長身分自動核准。"}</div>}
+            {approvalRequired && role === "cashier" && <div className="field"><label htmlFor="managerPin">店長 PIN</label><input id="managerPin" name="managerPin" type="password" inputMode="numeric" pattern="[0-9]{4,8}" maxLength={8} autoComplete="off" required placeholder="4～8 位數字"/></div>}
+            {!approvalRequired && <input type="hidden" name="managerPin" value=""/>}
+            <div className="field"><label htmlFor="paymentMethod">付款方式</label><select id="paymentMethod" name="paymentMethod" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="cash">現金</option><option value="transfer">銀行轉帳</option><option value="line_transfer">LINE 轉帳</option><option value="card">信用卡</option></select></div>
+            {(paymentMethod === "transfer" || paymentMethod === "line_transfer") && <div className="transfer-reconcile"><div className="field"><label htmlFor="transferLast4">轉帳帳號末碼</label><input id="transferLast4" name="transferLast4" inputMode="numeric" pattern="[0-9]{3,5}" maxLength={5} placeholder="例如：12345"/></div><div className="field"><label htmlFor="paymentConfirmedBy">確認人</label><input id="paymentConfirmedBy" name="paymentConfirmedBy" maxLength={40} placeholder="例如：王店長"/></div><div className="field"><label htmlFor="paymentNote">交易備註</label><input id="paymentNote" name="paymentNote" maxLength={120} placeholder="例如：LINE Pay 轉帳截圖已確認"/></div><small>帳號末碼、確認人或備註至少填寫一項，方便結班對帳。</small></div>}
             <div className="cart-breakdown"><span>商品小計</span><b>{money(subtotal)}</b>{discount > 0 && <><span>整單折扣</span><b>−{money(discount)}</b></>}{pointsDiscount > 0 && <><span>點數折抵</span><b>−{money(pointsDiscount)}</b></>}</div><div className="cart-total"><span>實收金額</span><b>{money(total)}</b></div>
             <input type="hidden" name="requestId" value={requestId}/><input type="hidden" name="items" value={JSON.stringify(cart.map((product) => ({ variantId: product.id, quantity: product.quantity })))}/>
-            <CheckoutSubmitButton disabled={!requestId || cart.length === 0 || discount > subtotal || actualRedeem > maxRedeem}/>
+            <CheckoutSubmitButton disabled={!requestId || cart.length === 0 || discount > subtotal || actualRedeem > maxRedeem || (approvalRequired && role === "cashier" && !approval.pinConfigured)}/>
           </aside></div>
       </form>}
     </section></div>}

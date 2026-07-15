@@ -11,6 +11,10 @@ const schema = z.object({
   discount: z.coerce.number().finite().min(0).default(0),
   customerId: z.union([z.literal(""), z.string().uuid()]).default(""),
   pointsToRedeem: z.coerce.number().int().min(0).default(0),
+  managerPin: z.string().trim().max(8).optional(),
+  transferLast4: z.union([z.literal(""), z.string().regex(/^\d{3,5}$/, "帳號末碼請輸入 3～5 位數字")]).default(""),
+  paymentNote: z.string().trim().max(120).default(""),
+  paymentConfirmedBy: z.string().trim().max(40).default(""),
   items: z.array(z.object({
     variantId: z.string().uuid(),
     quantity: z.number().int().positive().max(9999),
@@ -26,6 +30,8 @@ function friendlyCheckoutError(message: string) {
   if (message.includes("點數不足")) return "會員點數不足，這筆交易沒有成立；請重新選擇折抵點數。";
   if (message.includes("已停售") || message.includes("不存在")) return "部分商品已停售或不存在，這筆交易沒有成立；請重新整理商品。";
   if (message.includes("折扣") || message.includes("點數折抵")) return "折扣或點數折抵金額不正確，這筆交易沒有成立。";
+  if (message.includes("PIN") || message.includes("店長核准")) return message;
+  if (message.includes("轉帳") || message.includes("帳號末碼")) return message;
   if (message.includes("正在處理") || message.includes("重複")) return "這筆結帳已送出，系統正在確認結果，請稍後重新整理銷售紀錄。";
   if (message.includes("create_and_complete_sale") || message.includes("schema cache")) return "結帳功能尚未完成資料庫升級，請通知店主執行最新 migration。";
   if (message.includes("權限") || message.includes("無權")) return "您沒有銷售結帳權限，請由店主確認帳號角色。";
@@ -41,6 +47,10 @@ export async function completeCheckout(formData: FormData) {
       discount: formData.get("discount") || 0,
       customerId: formData.get("customerId") || "",
       pointsToRedeem: formData.get("pointsToRedeem") || 0,
+      managerPin: String(formData.get("managerPin") || ""),
+      transferLast4: String(formData.get("transferLast4") || ""),
+      paymentNote: String(formData.get("paymentNote") || ""),
+      paymentConfirmedBy: String(formData.get("paymentConfirmedBy") || ""),
       items: JSON.parse(String(formData.get("items") || "[]")),
     });
   } catch (error) {
@@ -73,6 +83,10 @@ export async function completeCheckout(formData: FormData) {
       variant_id: item.variantId,
       quantity: item.quantity,
     })),
+    p_manager_pin: input.managerPin || null,
+    p_transfer_last4: input.transferLast4 || null,
+    p_payment_note: input.paymentNote,
+    p_payment_confirmed_by: input.paymentConfirmedBy || null,
   });
 
   if (error) fail(friendlyCheckoutError(error.message));

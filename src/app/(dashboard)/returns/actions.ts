@@ -11,6 +11,7 @@ const schema = z.object({
   refundMethod: z.enum(["original", "cash", "card", "transfer"]),
   reason: z.string().trim().min(2, "請選擇或填寫退貨原因").max(120),
   items: z.array(z.object({ sale_item_id: z.string().uuid(), quantity: z.number().int().positive() })).min(1, "請至少選擇一項退貨商品").max(100),
+  managerPin: z.string().trim().max(8).optional(),
 });
 
 function fail(message: string, saleDocument = ""): never {
@@ -28,6 +29,7 @@ export async function completeReturn(formData: FormData) {
       refundMethod: formData.get("refundMethod"),
       reason: formData.get("reason"),
       items: JSON.parse(String(formData.get("items") || "[]")),
+      managerPin: String(formData.get("managerPin") || ""),
     });
   } catch (error) {
     if (error instanceof z.ZodError) fail(error.issues[0]?.message || "退貨資料格式錯誤", String(formData.get("saleDocument") || ""));
@@ -41,8 +43,9 @@ export async function completeReturn(formData: FormData) {
     p_refund_method: input.refundMethod,
     p_reason: input.reason,
     p_items: input.items,
+    p_manager_pin: input.managerPin || null,
   });
-  if (error) fail("退貨失敗：" + error.message, input.saleDocument);
+  if (error) fail(error.message.includes("PIN") || error.message.includes("店長核准") ? error.message : "退貨失敗：" + error.message, input.saleDocument);
   revalidatePath("/returns");
   revalidatePath("/inventory");
   revalidatePath("/products");

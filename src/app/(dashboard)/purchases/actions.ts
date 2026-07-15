@@ -5,6 +5,8 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 const schema = z.object({
   supplierName: z.string().trim().max(80),
+  supplierDocumentNo: z.string().trim().max(80),
+  importFingerprint: z.string().trim().min(8, "進貨識別碼遺失，請關閉視窗後重試").max(100),
   note: z.string().trim().max(150),
   items: z
     .array(
@@ -25,6 +27,8 @@ export async function receivePurchase(formData: FormData) {
   try {
     input = schema.parse({
       supplierName: String(formData.get("supplierName") || ""),
+      supplierDocumentNo: String(formData.get("supplierDocumentNo") || ""),
+      importFingerprint: String(formData.get("importFingerprint") || ""),
       note: String(formData.get("note") || ""),
       items: JSON.parse(String(formData.get("items") || "[]")),
     });
@@ -40,6 +44,8 @@ export async function receivePurchase(formData: FormData) {
   if (!user) redirect("/login");
   const { data, error } = await supabase.rpc("receive_purchase", {
     p_supplier_name: input.supplierName,
+    p_supplier_document_no: input.supplierDocumentNo,
+    p_import_fingerprint: input.importFingerprint,
     p_note: input.note,
     p_items: input.items,
   });
@@ -53,7 +59,11 @@ export async function receivePurchase(formData: FormData) {
     document_no?: string;
     lines?: number;
     units?: number;
+    duplicate?: boolean;
   } | null;
+  if (result?.duplicate) {
+    redirect(`/purchases?message=${encodeURIComponent(`已阻擋重複入庫：${result.document_no || "這份進貨資料"} 已經匯入，庫存沒有再次增加。`)}`);
+  }
   redirect(
     `/purchases?message=${encodeURIComponent(`入庫完成：${result?.document_no || "進貨單"}，${result?.lines || input.items.length} 項／${result?.units || 0} 件`)}`,
   );

@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { readSheet } from "read-excel-file/browser";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { receivePurchase } from "@/app/(dashboard)/purchases/actions";
+import { SubmitButton } from "@/components/submit-button";
 export type PurchaseProduct = {
   id: string;
   sku: string;
@@ -16,6 +17,7 @@ export type PurchaseRecord = {
   documentNo: string;
   completedAt: string;
   supplier: string;
+  supplierDocumentNo: string;
   lines: number;
   units: number;
   note: string;
@@ -39,7 +41,10 @@ export function PurchaseManager({
   records: PurchaseRecord[];
   message?: string;
 }) {
-  const [mode, setMode] = useState<"scan" | "excel" | "manual" | null>(null);
+  const [session, setSession] = useState<{ mode: "scan" | "excel" | "manual"; fingerprint: string } | null>(null);
+  function open(mode: "scan" | "excel" | "manual") {
+    setSession({ mode, fingerprint: `manual:${crypto.randomUUID()}` });
+  }
   return (
     <>
       {message && (
@@ -53,13 +58,13 @@ export function PurchaseManager({
           <p>掃碼、Excel 或手動建立進貨單，完成後立即增加庫存。</p>
         </div>
         <div className="actions">
-          <button className="btn" onClick={() => setMode("excel")}>
+          <button className="btn" onClick={() => open("excel")}>
             ⇩ 匯入 Excel
           </button>
-          <button className="btn" onClick={() => setMode("manual")}>
+          <button className="btn" onClick={() => open("manual")}>
             ＋ 手動入庫
           </button>
-          <button className="btn primary" onClick={() => setMode("scan")}>
+          <button className="btn primary" onClick={() => open("scan")}>
             ▦ 掃碼入庫
           </button>
         </div>
@@ -68,7 +73,7 @@ export function PurchaseManager({
         <div className="panel-head">
           <div>
             <h3>最近完成的進貨單</h3>
-            <p>顯示最近 50 筆真實入庫紀錄</p>
+            <p>可依單號、廠商單號、備註與日期查詢</p>
           </div>
         </div>
         <div className="table-wrap">
@@ -77,6 +82,7 @@ export function PurchaseManager({
               <tr>
                 <th>進貨單號</th>
                 <th>完成時間</th>
+                <th>廠商單號</th>
                 <th>供應商</th>
                 <th className="num">品項</th>
                 <th className="num">件數</th>
@@ -86,7 +92,7 @@ export function PurchaseManager({
             <tbody>
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="empty">
+                    <td colSpan={7} className="empty">
                     尚未建立進貨單
                   </td>
                 </tr>
@@ -95,6 +101,7 @@ export function PurchaseManager({
                   <tr key={r.id}>
                     <td className="code">{r.documentNo}</td>
                     <td>{r.completedAt}</td>
+                    <td className="code">{r.supplierDocumentNo || "—"}</td>
                     <td>{r.supplier}</td>
                     <td className="num">{r.lines}</td>
                     <td className="num">{r.units}</td>
@@ -106,11 +113,12 @@ export function PurchaseManager({
           </table>
         </div>
       </section>
-      {mode && (
+      {session && (
         <ReceiveModal
-          mode={mode}
+          mode={session.mode}
+          initialFingerprint={session.fingerprint}
           products={products}
-          onClose={() => setMode(null)}
+          onClose={() => setSession(null)}
         />
       )}
     </>
@@ -118,10 +126,12 @@ export function PurchaseManager({
 }
 function ReceiveModal({
   mode,
+  initialFingerprint,
   products,
   onClose,
 }: {
   mode: "scan" | "excel" | "manual";
+  initialFingerprint: string;
   products: PurchaseProduct[];
   onClose: () => void;
 }) {
@@ -132,6 +142,8 @@ function ReceiveModal({
   const [selected, setSelected] = useState(products[0]?.id || "");
   const [manualQty, setManualQty] = useState(1);
   const [manualCost, setManualCost] = useState(0);
+  const [importFingerprint, setImportFingerprint] = useState(initialFingerprint);
+  const [importing, setImporting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const lines = useMemo(
     () => products.filter((p) => cart[p.id]),
@@ -172,7 +184,11 @@ function ReceiveModal({
   async function importExcel(file: File) {
     setError("");
     setPreview([]);
+    setImporting(true);
     try {
+      const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      setImportFingerprint(`excel:${hash}`);
       const rows = await readSheet(file);
       if (rows.length < 2) throw new Error("Excel 沒有可匯入的明細列");
       const normalize = (v: unknown) =>
@@ -251,6 +267,8 @@ function ReceiveModal({
     } catch (e) {
       setCart({});
       setError(e instanceof Error ? e.message : "無法讀取 Excel");
+    } finally {
+      setImporting(false);
     }
   }
   const invalidExcel = mode === "excel" && preview.some((r) => !r.valid);
@@ -375,6 +393,7 @@ function ReceiveModal({
                       if (file) void importExcel(file);
                     }}
                   />
+                  {importing && <small>Excel 讀取與防重複指紋計算中…</small>}
                   <small>
                     第一列至少需要「條碼」與「數量」；「成本」與「商品名稱」為選填。條碼欄建議在
                     Excel 設為文字格式。
@@ -426,6 +445,11 @@ function ReceiveModal({
                   />
                 </div>
                 <div className="field">
+                  <label>廠商單號（建議填寫）</label>
+                  <input name="supplierDocumentNo" placeholder="例如：INV-20260715-001" maxLength={80}/>
+                  <small>相同廠商單號只允許入庫一次。</small>
+                </div>
+                <div className="field">
                   <label>進貨備註</label>
                   <input
                     name="note"
@@ -445,6 +469,7 @@ function ReceiveModal({
                 name="items"
                 value={JSON.stringify(payload)}
               />
+              <input type="hidden" name="importFingerprint" value={importFingerprint}/>
               <div className="purchase-footer">
                 <div>
                   <b>{lines.length} 項</b>・共{" "}
@@ -454,12 +479,7 @@ function ReceiveModal({
                   <button type="button" className="btn" onClick={onClose}>
                     取消
                   </button>
-                  <button
-                    className="btn primary"
-                    disabled={!lines.length || invalidExcel}
-                  >
-                    確認並完成入庫
-                  </button>
+                  <SubmitButton pendingLabel="入庫處理中，請勿重複送出…" disabled={!lines.length || invalidExcel || importing || !importFingerprint}>確認並完成入庫</SubmitButton>
                 </div>
               </div>
             </form>

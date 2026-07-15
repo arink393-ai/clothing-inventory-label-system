@@ -15,6 +15,7 @@ import {
   toggleProduct,
   updateProduct,
 } from "@/app/(dashboard)/products/actions";
+import { SubmitButton } from "@/components/submit-button";
 export type ProductRow = {
   id: string;
   variantId: string;
@@ -32,6 +33,9 @@ export type ProductRow = {
   cost: number;
   reorderPoint: number;
   active: boolean;
+  isConsignment: boolean;
+  consignorName: string;
+  commissionPercent: number;
 };
 const money = (n: number) =>
   new Intl.NumberFormat("zh-TW", {
@@ -64,14 +68,17 @@ function Select({
 function ProductFields({
   row,
   quick = false,
+  canManageConsignment,
 }: {
   row?: ProductRow;
   quick?: boolean;
+  canManageConsignment: boolean;
 }) {
   const [barcode, setBarcode] = useState(row?.barcode || "");
   const [category, setCategory] = useState(row?.category || "其他");
   const [customCategory, setCustomCategory] = useState("");
   const [photo, setPhoto] = useState("");
+  const [isConsignment, setIsConsignment] = useState(row?.isConsignment || false);
   const detected = useCallback((value: string) => setBarcode(value), []);
   const actualCategory =
     category === "其他" && customCategory.trim()
@@ -151,6 +158,7 @@ function ProductFields({
             <input type="hidden" name="size" value="未指定" />
             <input type="hidden" name="reorderPoint" value="3" />
             <input type="hidden" name="cost" value="0" />
+            <input type="hidden" name="isConsignment" value="false" />
           </>
         )}
         {!quick && (
@@ -229,6 +237,8 @@ function ProductFields({
                 <small>不輸入會以 0 儲存；一般商品列表不顯示成本。</small>
               </div>
             </details>
+            {canManageConsignment ? <><div className="field consignment-toggle"><label>商品來源</label><select name="isConsignment" value={String(isConsignment)} onChange={(event)=>setIsConsignment(event.target.value==="true")}><option value="false">一般自有商品</option><option value="true">寄賣商品</option></select></div>
+            {isConsignment && <><div className="field"><label>寄賣人／寄賣廠商</label><input name="consignorName" defaultValue={row?.consignorName} maxLength={80} required placeholder="例如：陳小姐／ABC 品牌"/></div><div className="field"><label>門市抽成％</label><input name="commissionPercent" type="number" min="0" max="100" step="0.01" defaultValue={row?.commissionPercent ?? 30} required/><small>例如填 30，代表門市保留 30%，寄賣人分得 70%。</small></div></>}</> : <><input type="hidden" name="isConsignment" value={String(row?.isConsignment || false)}/>{row?.isConsignment && <><input type="hidden" name="consignorName" value={row.consignorName}/><input type="hidden" name="commissionPercent" value={row.commissionPercent}/><div className="notice">此商品為寄賣品；寄賣人與抽成比例需由店主或店長修改。</div></>}</>}
           </>
         )}
       </div>
@@ -238,9 +248,11 @@ function ProductFields({
 export function ProductManager({
   rows,
   message,
+  canManageConsignment,
 }: {
   rows: ProductRow[];
   message?: string;
+  canManageConsignment: boolean;
 }) {
   const [mode, setMode] = useState<"quick" | "full" | null>(null);
   const [editing, setEditing] = useState<ProductRow | null>(null);
@@ -284,7 +296,7 @@ export function ProductManager({
             </button>
           </div>
           <form action={createProduct}>
-            <ProductFields quick={mode === "quick"} />
+            <ProductFields quick={mode === "quick"} canManageConsignment={canManageConsignment}/>
             <div className="form-actions">
               <button
                 type="button"
@@ -293,9 +305,7 @@ export function ProductManager({
               >
                 取消
               </button>
-              <button className="btn primary">
-                {mode === "quick" ? "立即儲存並入庫 1 件" : "儲存到雲端"}
-              </button>
+              <SubmitButton pendingLabel={mode === "quick" ? "建檔並入庫中…" : "商品儲存中…"}>{mode === "quick" ? "立即儲存並入庫 1 件" : "儲存到雲端"}</SubmitButton>
             </div>
           </form>
         </section>
@@ -336,7 +346,7 @@ export function ProductManager({
                     <td>
                       <div className="product-name-cell">{row.imageUrl&&<img src={row.imageUrl} alt=""/>}<b>{row.name}</b></div>
                     </td>
-                    <td>{row.category}</td>
+                    <td>{row.category}{row.isConsignment && <><br/><span className="pill">寄賣・抽成 {row.commissionPercent}%</span></>}</td>
                     <td>
                       {[row.color, row.size]
                         .filter((v) => v && v !== "未指定")
@@ -382,11 +392,7 @@ export function ProductManager({
                             name="active"
                             value={String(!row.active)}
                           />
-                          <button
-                            className={`btn sm ${row.active ? "danger" : ""}`}
-                          >
-                            {row.active ? "停售" : "重新上架"}
-                          </button>
+                          <SubmitButton className={`btn sm ${row.active ? "danger" : ""}`} pendingLabel="更新中…">{row.active ? "停售" : "重新上架"}</SubmitButton>
                         </form>
                       </div>
                     </td>
@@ -412,7 +418,7 @@ export function ProductManager({
             <form action={updateProduct}>
               <input type="hidden" name="productId" value={editing.id} />
               <input type="hidden" name="variantId" value={editing.variantId} />
-              <ProductFields row={editing} />
+              <ProductFields row={editing} canManageConsignment={canManageConsignment}/>
               <div className="form-actions">
                 <button
                   type="button"
@@ -421,7 +427,7 @@ export function ProductManager({
                 >
                   取消
                 </button>
-                <button className="btn primary">儲存變更</button>
+                <SubmitButton pendingLabel="商品更新中…">儲存變更</SubmitButton>
               </div>
             </form>
           </section>

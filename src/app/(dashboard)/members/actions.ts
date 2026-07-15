@@ -55,13 +55,12 @@ export async function deleteMember(formData: FormData) {
 }
 
 export async function adjustPoints(formData: FormData) {
-  const parsed = z.object({ customerId: z.string().uuid(), delta: z.coerce.number().int().refine((n) => n !== 0, "調整點數不可為 0"), note: z.string().trim().min(2, "請填寫調整原因").max(120) }).safeParse({
-    customerId: formData.get("customerId"), delta: formData.get("delta"), note: formData.get("note"),
+  const parsed = z.object({ customerId: z.string().uuid(), delta: z.coerce.number().int().refine((n) => n !== 0, "調整點數不可為 0"), note: z.string().trim().min(2, "請填寫調整原因").max(120), managerPin: z.string().trim().max(8).optional() }).safeParse({
+    customerId: formData.get("customerId"), delta: formData.get("delta"), note: formData.get("note"), managerPin: String(formData.get("managerPin") || ""),
   });
   if (!parsed.success) back(parsed.error.issues[0]?.message || "點數資料格式錯誤");
-  const { supabase, member } = await context();
-  if (!['owner', 'manager'].includes(member.role)) back("只有店主或店長可以人工調整點數");
-  const { error } = await supabase.rpc("adjust_customer_points", { p_customer_id: parsed.data.customerId, p_delta: parsed.data.delta, p_note: parsed.data.note });
+  const { supabase } = await context();
+  const { error } = await supabase.rpc("adjust_customer_points", { p_customer_id: parsed.data.customerId, p_delta: parsed.data.delta, p_note: parsed.data.note, p_manager_pin: parsed.data.managerPin || null });
   if (error) back("點數調整失敗：" + error.message);
   revalidatePath("/members");
   back("會員點數已調整並留下紀錄");

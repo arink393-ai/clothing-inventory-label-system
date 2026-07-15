@@ -16,6 +16,9 @@ type RawVariant = {
         name: string;
         image_path: string | null;
         active: boolean;
+        is_consignment: boolean;
+        consignor_name: string | null;
+        consignment_commission_percent: number | string | null;
         categories:
           | { name: string; code: string }
           | { name: string; code: string }[]
@@ -27,6 +30,9 @@ type RawVariant = {
         name: string;
         image_path: string | null;
         active: boolean;
+        is_consignment: boolean;
+        consignor_name: string | null;
+        consignment_commission_percent: number | string | null;
         categories:
           | { name: string; code: string }
           | { name: string; code: string }[]
@@ -53,7 +59,7 @@ export default async function Products({
   const { data, error } = await supabase
     .from("product_variants")
     .select(
-      "id,sku,barcode,color,size,price,reorder_point,active,products!inner(id,sku,name,image_path,active,categories(name,code)),inventory_balances(quantity)",
+      "id,sku,barcode,color,size,price,reorder_point,active,products!inner(id,sku,name,image_path,active,is_consignment,consignor_name,consignment_commission_percent,categories(name,code)),inventory_balances(quantity)",
     )
     .eq("store_id", member!.store_id)
     .order("sku");
@@ -88,6 +94,9 @@ export default async function Products({
         cost: costByVariant.get(v.id) || 0,
         reorderPoint: v.reorder_point,
         active: Boolean(p.active && v.active),
+        isConsignment: p.is_consignment,
+        consignorName: p.consignor_name || "",
+        commissionPercent: Number(p.consignment_commission_percent || 0),
       };
     },
   );
@@ -95,6 +104,7 @@ export default async function Products({
   return (
     <ProductManager
       rows={rows}
+      canManageConsignment={["owner", "manager"].includes(member!.role)}
       message={
         message || (error ? "讀取商品失敗：" + error.message : undefined)
       }

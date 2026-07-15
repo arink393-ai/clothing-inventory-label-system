@@ -1,15 +1,26 @@
 import { ReturnManager, type RecentReturn, type ReturnOrder } from "@/components/return-manager";
 import { createClient } from "@/lib/supabase/server";
+import { HistoryFilters } from "@/components/history-filters";
+import { HISTORY_PAGE_SIZE, parseHistoryParams, type HistorySearchParams } from "@/lib/history-query";
 
 const dateTime = (value: string) => new Intl.DateTimeFormat("zh-TW", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Taipei" }).format(new Date(value));
 
-export default async function Returns({ searchParams }: { searchParams: Promise<{ sale?: string; message?: string }> }) {
-  const { sale: rawSale = "", message } = await searchParams;
+export default async function Returns({ searchParams }: { searchParams: Promise<HistorySearchParams & { sale?: string }> }) {
+  const raw = await searchParams;
+  const { sale: rawSale = "", message } = raw;
+  const filter = parseHistoryParams(raw);
   const saleCode = rawSale.trim();
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const { data: member } = await supabase.from("store_members").select("store_id").eq("user_id", user!.id).eq("active", true).single();
-  const { data: recentRows } = await supabase.from("sale_returns").select("id,document_no,sale_id,refund_method,refund_amount,reason,completed_at,created_by,sales(document_no),sale_return_items(quantity)").eq("store_id", member!.store_id).order("completed_at", { ascending: false }).limit(50);
+  const { data: member } = await supabase.from("store_members").select("store_id,role").eq("user_id", user!.id).eq("active", true).single();
+  let recentQuery = supabase.from("sale_returns").select("id,document_no,sale_id,refund_method,refund_amount,reason,completed_at,created_by,sales(document_no),sale_return_items(quantity)", { count: "exact" }).eq("store_id", member!.store_id);
+  if (filter.safe) recentQuery = recentQuery.or(`document_no.ilike.%${filter.safe}%,reason.ilike.%${filter.safe}%`);
+  if (filter.start) recentQuery = recentQuery.gte("completed_at", filter.start);
+  if (filter.end) recentQuery = recentQuery.lt("completed_at", filter.end);
+  const [{ data: recentRows, count }, { data: approvalData }] = await Promise.all([
+    recentQuery.order("completed_at", { ascending: false }).order("id", { ascending: false }).range(filter.offset, filter.offset + HISTORY_PAGE_SIZE - 1),
+    supabase.rpc("get_approval_settings", { p_store_id: member!.store_id }),
+  ]);
   const recent: RecentReturn[] = (recentRows || []).map((row) => {
     const originalSale = Array.isArray(row.sales) ? row.sales[0] : row.sales;
     return { id: row.id, documentNo: row.document_no, saleDocument: originalSale?.document_no || "—", completedAt: dateTime(row.completed_at), itemCount: row.sale_return_items?.length || 0, unitCount: row.sale_return_items?.reduce((sum, item) => sum + item.quantity, 0) || 0, refundAmount: Number(row.refund_amount), refundMethod: row.refund_method, reason: row.reason, actor: row.created_by === user!.id ? "我" : "門市人員" };
@@ -45,5 +56,6 @@ export default async function Returns({ searchParams }: { searchParams: Promise<
       };
     }
   }
-  return <ReturnManager key={order?.id || saleCode || "lookup"} order={order} recent={recent} query={saleCode} message={message} lookupError={lookupError}/>;
+  const approval = approvalData as { return_threshold_amount?: number; pin_configured?: boolean } | null;
+  return <><ReturnManager key={order?.id || saleCode || "lookup"} order={order} recent={recent} query={saleCode} message={message} lookupError={lookupError} role={member!.role} approval={{ returnThresholdAmount: Number(approval?.return_threshold_amount ?? 3000), pinConfigured: approval?.pin_configured === true }}/><section className="panel history-filter-only"><HistoryFilters basePath="/returns" q={filter.q} from={filter.from} to={filter.to} page={filter.page} pageSize={HISTORY_PAGE_SIZE} total={count || 0} placeholder="搜尋退貨單號或原因…"/></section></>;
 }

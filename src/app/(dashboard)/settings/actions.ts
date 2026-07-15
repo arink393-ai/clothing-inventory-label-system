@@ -27,6 +27,18 @@ export async function updatePointsSettings(formData: FormData) {
  redirect("/settings?message="+encodeURIComponent("會員點數規則已更新"));
 }
 
+export async function updateApprovalSettings(formData: FormData) {
+ const parsed=z.object({discountThreshold:z.coerce.number().min(0).max(100),returnThreshold:z.coerce.number().min(0),managerPin:z.union([z.literal(""),z.string().regex(/^\d{4,8}$/, "店長 PIN 必須是 4～8 位數字")])}).safeParse({discountThreshold:formData.get("discountThreshold"),returnThreshold:formData.get("returnThreshold"),managerPin:String(formData.get("managerPin")||"").trim()});
+ if(!parsed.success)settingsMessage(parsed.error.issues[0]?.message||"核准設定格式錯誤");
+ const supabase=await createClient();const{data:{user}}=await supabase.auth.getUser();if(!user)redirect("/login");
+ const{data:member}=await supabase.from("store_members").select("store_id,role").eq("user_id",user.id).eq("active",true).single();
+ if(!member||member.role!=="owner")settingsMessage("只有店主可以修改核准規則");
+ const{error}=await supabase.rpc("update_approval_settings",{p_store_id:member.store_id,p_discount_threshold:parsed.data.discountThreshold,p_return_threshold:parsed.data.returnThreshold,p_manager_pin:parsed.data.managerPin||null});
+ if(error)settingsMessage("核准規則更新失敗："+error.message);
+ revalidatePath("/settings");revalidatePath("/sales");revalidatePath("/returns");revalidatePath("/members");
+ settingsMessage("店長核准門檻與 PIN 已安全更新");
+}
+
 function settingsMessage(text: string): never {
  redirect("/settings?message="+encodeURIComponent(text));
 }
