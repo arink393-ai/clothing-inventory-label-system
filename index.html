@@ -1011,6 +1011,7 @@
             <div class="field"><label>找不到對應商品時</label><select id="gbDefaultUnmatched">
               <option value="manual">要我手動對應</option>
               <option value="nostock">當作非庫存銷售（不扣庫存）</option>
+              <option value="create">自動建立為新商品（記名稱與售價，本批不扣庫存）</option>
             </select></div>
             <button class="btn" id="gbBuild">產生對應表</button>
           </div>
@@ -3144,8 +3145,24 @@ function gbResolveName(name){
   if(r) return r.variant?r.variant.code:r.product.code;
   return "";
 }
+function gbCleanName(raw){
+  // 去掉品名尾端的價格字樣（例：「…米粒傘 #漢紫色 $189」→ 去掉「 $189」）
+  const n=String(raw||"").replace(/\s*\$\s*\d+(?:\.\d+)?\s*$/,"").trim();
+  return n||String(raw||"").trim();
+}
+function gbEnsureProduct(rawName, price){
+  // 已存在（用清理後或原始名稱都試）就直接回傳其編號，不重複建檔
+  const hit=resolveCode(gbCleanName(rawName))||resolveCode(rawName);
+  if(hit) return hit.variant?hit.variant.code:hit.product.code;
+  const p=addProduct({ name:gbCleanName(rawName), category:"雜貨",
+    base:(price!=null?price:0), price:(price!=null?price:""), stock:0, cost:0,
+    promoType:"none", consignor:"", consignRate:0, variants:[], code:"",
+    desc:"（由團購匯入自動建檔）" });
+  state.gbMap[gbNorm(rawName)]=p.code; // 記住原始團購品名 → 新商品編號，下次自動對應
+  return p.code;
+}
 function gbProductOptions(selectedCode){
-  let html=`<option value="">— 請選擇 —</option><option value="__NOSTOCK__"${selectedCode==="__NOSTOCK__"?" selected":""}>＊非庫存（只記銷售、不扣庫存）</option>`;
+  let html=`<option value="">— 請選擇 —</option><option value="__NOSTOCK__"${selectedCode==="__NOSTOCK__"?" selected":""}>＊非庫存（只記銷售、不扣庫存）</option><option value="__CREATE__"${selectedCode==="__CREATE__"?" selected":""}>＊建立為新商品（記名稱售價、不扣庫存）</option>`;
   state.products.forEach(p=>{
     if(hasVariants(p)){
       p.variants.forEach(v=>html+=`<option value="${esc(v.code)}"${v.code===selectedCode?" selected":""}>${esc(p.name)}（${esc(v.vname)}）· 庫${parseInt(v.stock)||0}</option>`);
@@ -3172,7 +3189,7 @@ function gbBuild(){
     if(map[key]) map[key].qty+=qty; else map[key]={rawName,qty,price,customer:cust,phone,lineId};
   });
   const dflt=$("#gbDefaultUnmatched")?$("#gbDefaultUnmatched").value:"manual";
-  gbParsed=Object.values(map).map(r=>{ let code=gbResolveName(r.rawName); if(!code && dflt==="nostock") code="__NOSTOCK__"; return {...r, code}; });
+  gbParsed=Object.values(map).map(r=>{ let code=gbResolveName(r.rawName); if(!code && dflt==="nostock") code="__NOSTOCK__"; if(!code && dflt==="create") code="__CREATE__"; return {...r, code}; });
   if(!gbParsed.length){ toast("沒有有效的訂單列（商品或數量為空）"); return; }
   $("#gbPreviewWrap").style.display="block";
   if(!$("#gbDate").value) $("#gbDate").value=todayStr();
@@ -3184,6 +3201,7 @@ function renderGbPreview(){
   const rowHtml=(r,idx)=>{
     let after="—", style="";
     if(r.code==="__NOSTOCK__"){ after='<span style="color:var(--muted)">不扣庫存</span>'; }
+    else if(r.code==="__CREATE__"){ after='<span style="color:var(--ok)">將建檔・不扣庫存</span>'; }
     else if(r.code){
       used[r.code]=(used[r.code]||0)+r.qty;
       const r2=resolveCode(r.code);
@@ -3237,6 +3255,11 @@ function gbSendCustomerToCart(cust){
   const rows=idxs.map(i=>gbParsed[i]);
   if(rows.some(r=>!r.code)){ toast("這位顧客還有品項未對應商品，請先對應完再加入結帳"); return; }
   rows.forEach(r=>{
+    if(r.code==="__CREATE__"){
+      gbEnsureProduct(r.rawName, r.price);
+      soCart.push({code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, fromGb:true, gbCustomer:cust});
+      return;
+    }
     if(r.code==="__NOSTOCK__"){
       soCart.push({code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, fromGb:true, gbCustomer:cust});
       return;
@@ -3294,7 +3317,14 @@ function gbCommit(){
   const pay=$("#gbPay").value;
   if(mode==="perCust" && !gbParsed.some(r=>r.customer||r.phone||r.lineId)){ toast("需要顧客／電話／LINE 暱稱其中一欄才能一人一單／對應會員"); return; }
   const batchId="GB"+Date.now().toString(36);
+  let createdProducts=0;
   const mkItem=r=>{
+    if(r.code==="__CREATE__"){
+      const before=state.products.length;
+      gbEnsureProduct(r.rawName, r.price);
+      if(state.products.length>before) createdProducts++;
+      return {code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, nostock:true};
+    }
     if(r.code==="__NOSTOCK__"){ return {code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, nostock:true}; }
     const rr=resolveCode(r.code), p=rr.product; return {code:r.code, name:(rr.variant?p.name+"（"+rr.variant.vname+"）":p.name), qty:r.qty, price:(r.price!=null?r.price:p.price), cost:variantCost(p,rr.variant), manual:false};
   };
@@ -3324,7 +3354,8 @@ function gbCommit(){
   saveState(); renderInventory(); renderSoHistory(); renderReport(); renderLowStock(); renderMembers(); refreshMemberSelect(); renderGbBatches();
   gbParsed=[]; gbRows=[];
   $("#gbPreviewWrap").style.display="none"; $("#gbMapArea").style.display="none"; $("#gbPaste").value=""; if($("#gbFile")) $("#gbFile").value="";
-  let msg="團購匯入完成："+created+" 張單、共 "+cnt+" 件，已扣庫存";
+  let msg="團購匯入完成："+created+" 張單、共 "+cnt+" 件";
+  if(createdProducts) msg+="；自動建檔 "+createdProducts+" 項新商品";
   if(linked) msg+="；對應會員 "+linked+" 人"+(newMembers?("（新建 "+newMembers+" 位）"):"");
   toast(msg);
 }
@@ -4944,7 +4975,7 @@ function bindEvents(){
     const tr=e.target.closest("tr"); if(!tr) return;
     const idx=+tr.dataset.idx; const code=e.target.value; const nm=gbParsed[idx].rawName;
     gbParsed.forEach(r=>{ if(gbNorm(r.rawName)===gbNorm(nm)) r.code=code; });
-    if(code) state.gbMap[gbNorm(nm)]=code; else delete state.gbMap[gbNorm(nm)];
+    if(code && code!=="__CREATE__") state.gbMap[gbNorm(nm)]=code; else if(!code) delete state.gbMap[gbNorm(nm)];
     saveState(); renderGbPreview();
   });
   $("#gbPreviewBody").addEventListener("click",e=>{
