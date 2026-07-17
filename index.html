@@ -247,6 +247,11 @@
     opacity:0;pointer-events:none;transition:.25s;z-index:99;box-shadow:0 8px 30px -8px rgba(0,0,0,.5)}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+  .set-sec{border:1px solid var(--line);border-radius:10px;padding:13px 14px;margin-bottom:12px;background:var(--surface-2)}
+  .set-sec h4{font-size:14px;margin:0 0 4px}
+  .set-sec .hint{margin-bottom:9px}
+  .set-sec .field{margin-bottom:9px}
+  .set-sec.danger-sec{border-color:#e2c2c2;background:#fdf5f5}
   .onb-fab{position:fixed;right:18px;bottom:24px;z-index:70;width:50px;height:50px;border-radius:50%;
     background:var(--stamp);color:#fff;border:none;box-shadow:0 8px 22px -6px rgba(0,0,0,.45);
     font-size:21px;display:flex;align-items:center;justify-content:center;cursor:pointer}
@@ -553,9 +558,11 @@
   }
 
   /* ===== 底部分頁列（手機 App 樣式，桌機隱藏） ===== */
-  .bnav{display:none;position:fixed;left:0;right:0;bottom:0;z-index:60;
+  .bnav{display:none;position:fixed;left:0;right:0;bottom:0;z-index:60;transform:translateZ(0);will-change:transform;
     background:var(--ink);padding-bottom:env(safe-area-inset-bottom);
     border-top:1px solid rgba(255,255,255,.08);box-shadow:0 -6px 20px -10px rgba(0,0,0,.5)}
+  /* iOS：鍵盤開啟時固定元素會浮在畫面中間，先整個藏起來，收鍵盤再出現 */
+  body.kb-open .bnav, body.kb-open .onb-fab, body.kb-open .onb-panel{display:none!important}
   .bnav-inner{display:flex;align-items:stretch}
   .bnav-item{flex:1;min-width:0;background:none;border:none;color:#928b7d;
     display:flex;flex-direction:column;align-items:center;gap:3px;
@@ -615,6 +622,9 @@
         <span id="syncBadgeText">未連線</span>
       </span>
       <span class="auth-who" id="authWho"></span>
+      <button class="btn sm ghost" id="settingsBtn" title="進階設定" style="display:none;padding:5px 9px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;display:block"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
       <button class="btn sm ghost" id="logoutBtn">登出</button>
     </div>
   </div>
@@ -720,7 +730,7 @@
 
     <div class="panel">
       <h2><span class="num">匯入</span>從 Excel 批次建檔</h2>
-      <p class="sub">Excel 需要欄位：<b>商品名稱</b>、<b>分類</b>、<b>定價</b>（可選 <b>建議售價</b>）。系統會自動編號並產生條碼。</p>
+      <p class="sub">Excel 需要欄位：<b>商品名稱</b>、<b>分類</b>、<b>定價</b>（可選 <b>建議售價</b>、<b>庫存</b>）。系統會自動編號並產生條碼。<b>沒填庫存的商品會自動設為 1</b>；要指定數量就在「庫存」欄填數字（填 0 就是 0）。</p>
       <div class="toolbar">
         <button class="btn" id="dlTemplate">下載 Excel 範本</button>
         <label class="btn primary" style="margin:0">
@@ -810,14 +820,6 @@
       <p class="hint" style="margin:4px 0 0">「備份」會下載一個 .json 檔；「還原」會用該檔<b>覆蓋</b>目前全部資料；「清空全部資料」會把所有資料刪除歸零（含會員），請務必先備份。</p>
     </div>
 
-    <div class="panel" style="border:1px solid #e2c2c2;background:#fdf5f5">
-      <h2><span class="num" style="background:var(--price)">出廠</span>出廠重置（給新商家使用）</h2>
-      <p class="sub">跟上面的「清空全部資料」不一樣：這個<b>連密碼、AI 金鑰、雲端同步設定、店名、分類、員工都會恢復成初始狀態</b>，等於回到全新安裝的狀態。用途是把系統交給<b>別的商家</b>之前，確保不會帶到你自己的任何設定或機密資料。執行後會自動登出，需要用預設密碼（admin/0000）重新登入。</p>
-      <div class="toolbar">
-        <button class="btn danger" id="factoryReset">🏭 出廠重置</button>
-      </div>
-    </div>
-
     <div class="panel">
       <h2><span class="num">盤點</span>庫存盤點（實際 vs 系統）</h2>
       <p class="sub">實際清點後在此輸入各品項的「實際數量」，系統會算出差異；按「套用盤點」會把庫存更新為實際數量，並留下一筆盤點紀錄。有變體的商品會逐規格列出。</p>
@@ -844,33 +846,6 @@
         <button class="btn primary" id="savePass">儲存密碼</button>
       </div>
       <p class="hint" style="margin-top:8px">變更後立即生效，下次登入請使用新密碼。密碼會隨「備份」一起保存。</p>
-    </div>
-
-    <div class="panel">
-      <h2><span class="num">AI</span>拍照辨識設定（Gemini）</h2>
-      <p class="sub">設定後，新增商品時可用「📷 拍照命名」自動辨識商品、帶入名稱與介紹。需要一組 Google Gemini 免費 API 金鑰（在 Google AI Studio 免費申請）。金鑰只存在本機瀏覽器，會隨備份保存。</p>
-      <div class="settings">
-        <div class="field" style="flex:1;min-width:200px"><label>Gemini API 金鑰</label><input id="setGeminiKey" type="text" autocomplete="off" placeholder="貼上 AI...金鑰"></div>
-        <div class="field"><label>模型（進階，可不改）</label><input id="setGeminiModel" type="text" autocomplete="off" style="width:190px" placeholder="gemini-flash-latest"></div>
-        <button class="btn primary" id="saveGemini">儲存 AI 設定</button>
-      </div>
-      <p class="hint" style="margin-top:8px">申請網址：aistudio.google.com/app/apikey（登入 Google 帳號 → Create API key）。免費額度足夠一般建檔使用。</p>
-    </div>
-
-    <div class="panel">
-      <h2><span class="num">同步</span>多裝置雲端同步（手機／電腦共用）</h2>
-      <p class="sub">設定後，手機與電腦會透過雲端資料庫共用同一份資料——手機建檔、電腦結帳都看得到。需要一組免費 Supabase 專案。狀態：<b id="syncStatus" style="color:var(--muted)">未連線</b></p>
-      <div class="settings">
-        <div class="field" style="flex:1;min-width:200px"><label>Supabase 專案網址</label><input id="syncUrl" type="text" autocomplete="off" placeholder="https://xxxx.supabase.co"></div>
-        <div class="field" style="flex:1;min-width:200px"><label>API 金鑰（anon / publishable）</label><input id="syncKey" type="text" autocomplete="off" placeholder="sb_publishable_... 或 eyJ..."></div>
-      </div>
-      <div class="settings">
-        <div class="field" style="flex:1;min-width:160px"><label>同步帳號（Email）</label><input id="syncEmail" type="text" autocomplete="off" placeholder="shop@example.com"></div>
-        <div class="field" style="flex:1;min-width:160px"><label>同步密碼</label><input id="syncPass" type="password" autocomplete="off" placeholder="Supabase 使用者密碼"></div>
-        <button class="btn primary" id="syncConnect">連線並同步</button>
-        <button class="btn" id="syncDisconnect">停用</button>
-      </div>
-      <p class="hint" style="margin-top:8px">每台裝置都要填一次同樣的設定。金鑰與密碼只存在本機、不會寫進網頁程式，也不會同步到雲端。建立資料表的步驟我會另外提供。</p>
     </div>
   </section>
 
@@ -1008,6 +983,7 @@
             <div class="field"><label>顧客欄位（可空）</label><select id="gbColCust"></select></div>
             <div class="field"><label>電話欄（可空，輔助比對）</label><select id="gbColPhone"></select></div>
             <div class="field"><label>LINE 暱稱欄（可空，輔助比對）</label><select id="gbColLine"></select></div>
+            <div class="field"><label>團購訂單編號欄（可空，結帳後自動回報團購頁）</label><select id="gbColOrderId"></select></div>
             <div class="field"><label>找不到對應商品時</label><select id="gbDefaultUnmatched">
               <option value="manual">要我手動對應</option>
               <option value="nostock">當作非庫存銷售（不扣庫存）</option>
@@ -1023,9 +999,9 @@
           </tr></thead><tbody id="gbPreviewBody"></tbody></table></div>
           <div class="settings" style="margin-top:10px">
             <div class="field"><label>訂購者對應會員</label><select id="gbMember">
-              <option value="none">不對應（只記名字）</option>
+              <option value="create" selected>對應會員，找不到就自動新建（預設）</option>
               <option value="match">對應現有會員，找不到只記名字</option>
-              <option value="create">對應會員，找不到就自動新建</option>
+              <option value="none">不對應（只記名字）</option>
             </select></div>
             <div class="field"><label>建立方式</label><select id="gbMode">
               <option value="batch">整批一張單</option>
@@ -1488,6 +1464,59 @@
   </div>
 </div>
 
+<!-- 進階設定（齒輪） -->
+<div class="modal-bg" id="settingsBg">
+  <div class="modal wide">
+    <h3>⚙️ 進階設定</h3>
+    <p class="hint" style="margin-bottom:14px">這裡的設定只有管理員看得到，平常不需要調整。</p>
+
+    <div class="set-sec">
+      <h4>📷 拍照辨識設定（Gemini AI）</h4>
+      <p class="hint">設定後，新增商品時可用「📷 拍照命名」自動辨識商品、帶入名稱與介紹。需要一組 Google Gemini 免費 API 金鑰。金鑰只存在本機瀏覽器，會隨備份保存。</p>
+      <div class="field"><label>Gemini API 金鑰</label><input id="setGeminiKey" type="text" autocomplete="off" placeholder="貼上 AI...金鑰"></div>
+      <div class="field"><label>模型（進階，可不改）</label><input id="setGeminiModel" type="text" autocomplete="off" placeholder="gemini-flash-latest"></div>
+      <div style="display:flex;justify-content:flex-end"><button class="btn primary sm" id="saveGemini">儲存 AI 設定</button></div>
+      <p class="hint" style="margin-top:6px">申請網址：aistudio.google.com/app/apikey（登入 Google 帳號 → Create API key）。</p>
+    </div>
+
+    <div class="set-sec">
+      <h4>☁️ 多裝置雲端同步（手機／電腦共用）</h4>
+      <p class="hint">設定後，手機與電腦會共用同一份資料——手機建檔、電腦結帳都看得到。需要一組免費 Supabase 專案。狀態：<b id="syncStatus" style="color:var(--muted)">未連線</b></p>
+      <div class="field"><label>Supabase 專案網址</label><input id="syncUrl" type="text" autocomplete="off" placeholder="https://xxxx.supabase.co"></div>
+      <div class="field"><label>API 金鑰（anon / publishable）</label><input id="syncKey" type="text" autocomplete="off" placeholder="sb_publishable_... 或 eyJ..."></div>
+      <div class="field"><label>同步帳號（Email）</label><input id="syncEmail" type="text" autocomplete="off" placeholder="shop@example.com"></div>
+      <div class="field"><label>同步密碼</label><input id="syncPass" type="password" autocomplete="off" placeholder="Supabase 使用者密碼"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn sm" id="syncDisconnect">停用</button>
+        <button class="btn primary sm" id="syncConnect">連線並同步</button>
+      </div>
+      <p class="hint" style="margin-top:6px">每台裝置都要填一次同樣的設定。金鑰與密碼只存在本機、不會寫進網頁程式，也不會同步到雲端。</p>
+    </div>
+
+    <div class="set-sec">
+      <h4>🔗 團購頁連動（結帳後自動回報）</h4>
+      <p class="hint">填入你團購登記頁的 Supabase 資訊後，只要匯入時有帶「訂單編號」，<b>ERP 結帳完成時會自動把該筆團購標記為已結帳</b>，團購頁的「請先結帳」提示就會消失、「已取」勾選框自動解鎖。</p>
+      <div class="field"><label>團購 Supabase 網址</label><input id="gbDbUrl" type="text" autocomplete="off" placeholder="https://xxxx.supabase.co"></div>
+      <div class="field"><label>團購 anon / publishable 金鑰</label><input id="gbDbKey" type="text" autocomplete="off" placeholder="sb_publishable_..."></div>
+      <label class="hint" style="display:flex;align-items:center;gap:7px;margin:0 0 8px">
+        <input type="checkbox" id="gbAutoPicked" class="checkbox"> 同時自動勾選「已取」（客人結帳當下就取貨時勾這個）
+      </label>
+      <div style="display:flex;justify-content:flex-end"><button class="btn primary sm" id="saveGbDb">儲存團購連動</button></div>
+      <p class="hint" style="margin-top:6px">這兩個值在團購頁原始碼裡本來就是公開的，可直接複製。需先在 Supabase 建立回報用的函式（我會另外給你 SQL）。</p>
+    </div>
+
+    <div class="set-sec danger-sec">
+      <h4 style="color:var(--price)">🏭 出廠重置（給新商家使用）</h4>
+      <p class="hint">跟「清空全部資料」不一樣：這個<b>連密碼、AI 金鑰、雲端同步設定、店名、分類、員工都會恢復成初始狀態</b>，等於回到全新安裝。用途是把系統交給<b>別的商家</b>之前，確保不會帶到你自己的任何設定或機密資料。執行後會自動登出。</p>
+      <div style="display:flex;justify-content:flex-end"><button class="btn danger sm" id="factoryReset">🏭 出廠重置</button></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn primary" id="settingsClose">關閉</button>
+    </div>
+  </div>
+</div>
+
 <!-- 首次登入：引導變更預設密碼 -->
 <div class="modal-bg" id="pwWizardBg">
   <div class="modal">
@@ -1763,6 +1792,44 @@ function saveSyncSettings(){
 }
 function disconnectSync(){ if(syncCfg){ syncCfg.enabled=false; saveSyncCfg(syncCfg); } stopSync(); toast("已停用雲端同步（本機資料保留）"); }
 
+/* ============================================================
+   團購頁連動：ERP 結帳後回報「已結帳」，解除團購頁的「請先結帳」
+============================================================ */
+const GB_DB_KEY="erp_gbdb_cfg_v1";
+let gbDbCfg=null;
+function loadGbDbCfg(){ try{ gbDbCfg=JSON.parse(localStorage.getItem(GB_DB_KEY)||"null"); }catch(e){ gbDbCfg=null; } return gbDbCfg; }
+function saveGbDbCfg(c){ gbDbCfg=c; try{ localStorage.setItem(GB_DB_KEY, JSON.stringify(c)); }catch(e){} }
+function saveGbDbSettings(){
+  const cfg={ url:$("#gbDbUrl").value.trim(), key:$("#gbDbKey").value.trim(), autoPicked:$("#gbAutoPicked").checked };
+  if(cfg.url && !/^https?:\/\//.test(cfg.url)){ toast("團購 Supabase 網址格式不正確"); return; }
+  if(cfg.url && !cfg.key){ toast("請一併填入團購 anon 金鑰"); return; }
+  saveGbDbCfg(cfg);
+  toast(cfg.url ? "已儲存團購連動設定" : "已清除團購連動設定");
+}
+// 回報單筆團購訂單為「已結帳」；成功回 true
+async function gbReportPaid(orderId, saleId, documentNo){
+  const c=gbDbCfg||loadGbDbCfg();
+  if(!c || !c.url || !c.key || !orderId) return false;
+  const url=c.url.replace(/\/$/,"")+"/rest/v1/rpc/mark_group_buy_paid";
+  const body={ p_order_id:orderId, p_sale_id:(saleId||null), p_document_no:(documentNo||null), p_picked:!!c.autoPicked };
+  try{
+    const res=await fetch(url,{ method:"POST", headers:{ "Content-Type":"application/json", "apikey":c.key, "Authorization":"Bearer "+c.key }, body:JSON.stringify(body) });
+    return res.ok;
+  }catch(e){ return false; }
+}
+// 結帳完成後：把這張單裡所有帶團購訂單編號的品項回報出去
+async function gbReportOrderPaid(order){
+  const c=gbDbCfg||loadGbDbCfg();
+  if(!c || !c.url || !c.key) return;
+  const ids=[];
+  (order.items||[]).forEach(i=>{ (i.gbOrderIds||[]).forEach(id=>{ if(id && ids.indexOf(id)<0) ids.push(id); }); });
+  if(!ids.length) return;
+  const results=await Promise.all(ids.map(id=>gbReportPaid(id, order.id, order.id)));
+  const ok=results.filter(Boolean).length;
+  if(ok) toast("已回報團購頁："+ok+" 筆標記為已結帳"+(c.autoPicked?"／已取":""));
+  else toast("團購回報失敗（請檢查 ⚙️ 團購連動設定或網路）");
+}
+
 const $ = s=>document.querySelector(s);
 const $$ = s=>document.querySelectorAll(s);
 const esc = s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -1972,11 +2039,11 @@ const ONB_STEPS = [
   { id:"ai", title:"（選用）設定 AI 拍照辨識", required:false,
     desc:"新增商品時可拍照自動命名，需要一組免費 Gemini 金鑰。",
     done: ()=> !!(state.geminiKey && state.geminiKey.trim()),
-    go: ()=>{ switchView("inventory"); setTimeout(()=>{ const el=$("#setGeminiKey"); if(el){ el.scrollIntoView({behavior:"smooth",block:"center"}); el.focus(); } },150); } },
+    go: ()=>{ syncSettingsUI(); $("#settingsBg").classList.add("show"); setTimeout(()=>{ const el=$("#setGeminiKey"); if(el) el.focus(); },150); } },
   { id:"sync", title:"（選用）設定多裝置雲端同步", required:false,
     desc:"讓手機與電腦共用同一份資料，即時同步。",
     done: ()=>{ const c=(typeof loadSyncCfg==="function")?loadSyncCfg():null; return !!(c && c.url && c.enabled!==false); },
-    go: ()=>{ switchView("inventory"); setTimeout(()=>{ const el=$("#syncUrl"); if(el){ el.scrollIntoView({behavior:"smooth",block:"center"}); el.focus(); } },150); } },
+    go: ()=>{ syncSettingsUI(); $("#settingsBg").classList.add("show"); setTimeout(()=>{ const el=$("#syncUrl"); if(el) el.focus(); },150); } },
 ];
 function onbRequiredRemaining(){ return ONB_STEPS.filter(s=>s.required && !s.done()).length; }
 function renderOnbList(){
@@ -2346,12 +2413,12 @@ function xlsxBlob(wb){
 async function downloadTemplate(){
   if(typeof XLSX==="undefined"){ toast("Excel 元件未載入，請確認網路後重新整理"); return; }
   const data = [
-    {商品名稱:"咖啡蕾絲款", 分類:"雜貨", 定價:350, 建議售價:""},
-    {商品名稱:"礦石耳環",   分類:"雜貨", 定價:480, 建議售價:""},
-    {商品名稱:"白色T恤",    分類:"T恤", 定價:290, 建議售價:""},
+    {商品名稱:"咖啡蕾絲款", 分類:"雜貨", 定價:350, 建議售價:"", 庫存:""},
+    {商品名稱:"礦石耳環",   分類:"雜貨", 定價:480, 建議售價:"", 庫存:5},
+    {商品名稱:"白色T恤",    分類:"T恤", 定價:290, 建議售價:"", 庫存:""},
   ];
-  const ws = XLSX.utils.json_to_sheet(data, {header:["商品名稱","分類","定價","建議售價"]});
-  ws["!cols"]=[{wch:18},{wch:12},{wch:10},{wch:12}];
+  const ws = XLSX.utils.json_to_sheet(data, {header:["商品名稱","分類","定價","建議售價","庫存"]});
+  ws["!cols"]=[{wch:18},{wch:12},{wch:10},{wch:12},{wch:8}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "商品");
   const cat = XLSX.utils.json_to_sheet(cats().map(c=>({分類:c.name, 編號前綴:c.code})));
@@ -2362,6 +2429,16 @@ async function downloadTemplate(){
 
 function importExcel(file){
   if(typeof XLSX==="undefined"){ toast("Excel 元件載入失敗，請檢查網路"); return; }
+  // 取第一個「真的有填」的庫存欄位；完全沒填才用預設 1（明確填 0 會被尊重）
+  const pickStock=(...vals)=>{
+    for(const v of vals){
+      if(v===undefined||v===null) continue;
+      const s=String(v).trim(); if(s==="") continue;
+      const n=parseInt(s.replace(/[^\d.-]/g,""),10);
+      if(!isNaN(n)) return Math.max(0,n);
+    }
+    return 1;
+  };
   const reader = new FileReader();
   reader.onload = e=>{
     try{
@@ -2375,13 +2452,13 @@ function importExcel(file){
         const category = r["分類"]||r["類別"]||r["category"]||"雜貨";
         const base = r["定價"]||r["價格"]||r["售價"]||r["price"]||0;
         const price = r["建議售價"]||r["建議售價(議價)"]||"";
-        const stock = r["庫存"]||r["數量"]||r["庫存數量"]||0;
+        const stock = pickStock(r["庫存"], r["數量"], r["庫存數量"]);
         const cost = r["成本"]||r["進貨成本"]||r["成本/個"]||0;
         addProduct({name, category, base, price, stock, cost});
         added++;
       });
       saveState(); renderAll();
-      toast(added>0 ? `已匯入 ${added} 筆商品` : "找不到可匯入的資料（請確認欄位名稱）");
+      toast(added>0 ? `已匯入 ${added} 筆商品（未填庫存者預設 1）` : "找不到可匯入的資料（請確認欄位名稱）");
     }catch(err){ toast("讀取失敗，請確認是有效的 Excel 檔"); }
   };
   reader.readAsArrayBuffer(file);
@@ -3045,6 +3122,8 @@ function saveSale(){
   if(c.member) msg+="　獲得 "+c.earn+" 點";
   toast(msg);
   if($("#soAutoReceipt") && $("#soAutoReceipt").checked) showReceipt(order);
+  // 團購連動：把這張單裡的團購訂單回報成「已結帳」（背景執行，不擋結帳畫面）
+  if(typeof gbReportOrderPaid==="function") gbReportOrderPaid(order);
 }
 /* ============ 團購匯入（LINE 團購） ============ */
 let gbRows=[], gbHeaders=[], gbParsed=[];
@@ -3094,6 +3173,7 @@ function gbApplyObjs(objs){
   fillColSelect("#gbColCust", gbHeaders, guess(["訂購者","顧客","客戶","姓名","會員","line","暱稱","customer","buyer"]), true);
   fillColSelect("#gbColPhone",gbHeaders, guess(["電話","手機","phone","tel","mobile"]), true);
   fillColSelect("#gbColLine", gbHeaders, guess(["line","暱稱","顯示名稱","nickname","暱"]), true);
+  fillColSelect("#gbColOrderId", gbHeaders, guess(["訂單編號","訂單id","orderid","order_id","編號"]), true);
   $("#gbMapArea").style.display="block";
   $("#gbPreviewWrap").style.display="none";
   $("#gbCommit").disabled=true;
@@ -3175,6 +3255,7 @@ function gbProductOptions(selectedCode){
 function gbBuild(){
   const cN=$("#gbColName").value, cQ=$("#gbColQty").value, cP=$("#gbColPrice").value, cC=$("#gbColCust").value;
   const cPh=$("#gbColPhone")?$("#gbColPhone").value:"", cL=$("#gbColLine")?$("#gbColLine").value:"";
+  const cOid=$("#gbColOrderId")?$("#gbColOrderId").value:"";
   if(!cN||!cQ){ toast("請至少指定商品欄與數量欄"); return; }
   const map={};
   gbRows.forEach(o=>{
@@ -3185,8 +3266,10 @@ function gbBuild(){
     const cust=cC?String(o[cC]||"").trim():"";
     const phone=cPh?String(o[cPh]||"").trim():"";
     const lineId=cL?String(o[cL]||"").trim():"";
+    const oid=cOid?String(o[cOid]||"").trim():"";
     const key=rawName+"||"+cust+"||"+phone+"||"+lineId+"||"+(price==null?"":price);
-    if(map[key]) map[key].qty+=qty; else map[key]={rawName,qty,price,customer:cust,phone,lineId};
+    if(map[key]){ map[key].qty+=qty; if(oid) map[key].orderIds.push(oid); }
+    else map[key]={rawName,qty,price,customer:cust,phone,lineId,orderIds:(oid?[oid]:[])};
   });
   const dflt=$("#gbDefaultUnmatched")?$("#gbDefaultUnmatched").value:"manual";
   gbParsed=Object.values(map).map(r=>{ let code=gbResolveName(r.rawName); if(!code && dflt==="nostock") code="__NOSTOCK__"; if(!code && dflt==="create") code="__CREATE__"; return {...r, code}; });
@@ -3228,7 +3311,23 @@ function renderGbPreview(){
     const rowsHtml=idxs.map(i=>rowHtml(gbParsed[i],i)).join("");
     if(multiCust){
       const qty=idxs.reduce((s,i)=>s+gbParsed[i].qty,0);
-      html += `<tr class="gb-cust-hd" data-cust="${esc(cust)}"><td colspan="5"><b>👤 ${esc(cust)}</b>　共 ${idxs.length} 品項・${qty} 件</td>
+      const ph=gbParsed[idxs[0]].phone||"", li=gbParsed[idxs[0]].lineId||"";
+      const memMode=$("#gbMember")?$("#gbMember").value:"create";
+      let memTag="";
+      if(memMode!=="none" && cust && cust!=="（未填顧客）"){
+        const hit=findMemberForRow(cust, ph, li);
+        if(hit){
+          memTag=`　<span style="color:var(--ok);font-size:11.5px">✓ 會員 ${esc(hit.name)}（${esc(hit.id)}）</span>`;
+        }else if(memMode==="create"){
+          const sim=gbSimilarMember(cust, ph, li);
+          memTag = sim
+            ? `　<span style="color:var(--price);font-size:11.5px" title="若是同一人，請先到會員頁把「${esc(sim.name)}」的 LINE 暱稱改成「${esc(cust)}」，再重新匯入">⚠ 將新建，但可能就是現有會員「${esc(sim.name)}」</span>`
+            : `　<span style="color:var(--stamp);font-size:11.5px">＋ 將新建會員</span>`;
+        }else{
+          memTag=`　<span style="color:var(--muted);font-size:11.5px">未對到會員（只記名字）</span>`;
+        }
+      }
+      html += `<tr class="gb-cust-hd" data-cust="${esc(cust)}"><td colspan="5"><b>👤 ${esc(cust)}</b>　共 ${idxs.length} 品項・${qty} 件${memTag}</td>
         <td style="text-align:right"><button type="button" class="btn sm gb-tocart" data-cust="${esc(cust)}" title="把這位顧客的團購品加進銷貨購物車，可再加現場商品一起結帳">🛒 加入結帳</button></td></tr>`;
     }
     html += rowsHtml;
@@ -3255,13 +3354,14 @@ function gbSendCustomerToCart(cust){
   const rows=idxs.map(i=>gbParsed[i]);
   if(rows.some(r=>!r.code)){ toast("這位顧客還有品項未對應商品，請先對應完再加入結帳"); return; }
   rows.forEach(r=>{
+    const oids=(r.orderIds||[]).slice();
     if(r.code==="__CREATE__"){
       gbEnsureProduct(r.rawName, r.price);
-      soCart.push({code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, fromGb:true, gbCustomer:cust});
+      soCart.push({code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, fromGb:true, gbCustomer:cust, gbOrderIds:oids});
       return;
     }
     if(r.code==="__NOSTOCK__"){
-      soCart.push({code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, fromGb:true, gbCustomer:cust});
+      soCart.push({code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, fromGb:true, gbCustomer:cust, gbOrderIds:oids});
       return;
     }
     const rr=resolveCode(r.code); if(!rr) return;
@@ -3269,7 +3369,8 @@ function gbSendCustomerToCart(cust){
     const code=v?v.code:p.code, nm=v?(p.name+"（"+v.vname+"）"):p.name;
     const price=r.price!=null?r.price:p.price;
     const ex=soCart.find(i=>i.code===code && !i.manual && i.fromGb && i.gbCustomer===cust);
-    if(ex) ex.qty+=r.qty; else soCart.push({code, name:nm, qty:r.qty, price, cost:variantCost(p,v), manual:false, fromGb:true, gbCustomer:cust});
+    if(ex){ ex.qty+=r.qty; ex.gbOrderIds=(ex.gbOrderIds||[]).concat(oids); }
+    else soCart.push({code, name:nm, qty:r.qty, price, cost:variantCost(p,v), manual:false, fromGb:true, gbCustomer:cust, gbOrderIds:oids});
   });
   // 從待匯入清單移除，避免之後「確認匯入」時重複建單
   gbParsed = gbParsed.filter((r,i)=>!idxs.includes(i));
@@ -3292,6 +3393,21 @@ function findMemberForRow(name, phone, lineId){
   const nn=String(name||"").trim().toLowerCase();
   if(nn){ const m=state.members.find(x=>String(x.name||"").trim().toLowerCase()===nn || String(x.lineId||"").trim().toLowerCase()===nn); if(m) return m; }
   return null;
+}
+/* 找「疑似同一人」的會員（不自動合併，只在預覽提示）
+   典型情境：LINE 暱稱「裕臻」 vs 會員姓名「莊裕臻」（暱稱＝名字去掉姓） */
+function gbSimilarMember(name, phone, lineId){
+  const n=String(name||"").trim().toLowerCase();
+  if(n.length<2) return null;                       // 太短容易誤判
+  if(findMemberForRow(name, phone, lineId)) return null; // 已能精準對到就不用提示
+  return state.members.find(m=>{
+    const mn=String(m.name||"").trim().toLowerCase();
+    const ml=String(m.lineId||"").trim().toLowerCase();
+    if(mn && mn!==n && (mn.endsWith(n) || mn.includes(n))) return true;   // 莊裕臻 ⊃ 裕臻
+    if(ml && ml!==n && (ml.endsWith(n) || ml.includes(n))) return true;
+    if(mn && mn.length>=2 && n!==mn && n.includes(mn)) return true;        // 反向包含
+    return false;
+  }) || null;
 }
 function mkGbOrder(items, date, pay, batchId, customer, member){
   const sub=items.reduce((s,i)=>s+i.qty*i.price,0);
@@ -3323,10 +3439,10 @@ function gbCommit(){
       const before=state.products.length;
       gbEnsureProduct(r.rawName, r.price);
       if(state.products.length>before) createdProducts++;
-      return {code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, nostock:true};
+      return {code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, nostock:true, gbOrderIds:(r.orderIds||[]).slice()};
     }
-    if(r.code==="__NOSTOCK__"){ return {code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, nostock:true}; }
-    const rr=resolveCode(r.code), p=rr.product; return {code:r.code, name:(rr.variant?p.name+"（"+rr.variant.vname+"）":p.name), qty:r.qty, price:(r.price!=null?r.price:p.price), cost:variantCost(p,rr.variant), manual:false};
+    if(r.code==="__NOSTOCK__"){ return {code:"", name:r.rawName, qty:r.qty, price:(r.price!=null?r.price:0), cost:0, manual:true, nostock:true, gbOrderIds:(r.orderIds||[]).slice()}; }
+    const rr=resolveCode(r.code), p=rr.product; return {code:r.code, name:(rr.variant?p.name+"（"+rr.variant.vname+"）":p.name), qty:r.qty, price:(r.price!=null?r.price:p.price), cost:variantCost(p,rr.variant), manual:false, gbOrderIds:(r.orderIds||[]).slice()};
   };
   let created=0, cnt=0, newMembers=0, linked=0;
   if(mode==="perCust"){
@@ -3358,6 +3474,8 @@ function gbCommit(){
   if(createdProducts) msg+="；自動建檔 "+createdProducts+" 項新商品";
   if(linked) msg+="；對應會員 "+linked+" 人"+(newMembers?("（新建 "+newMembers+" 位）"):"");
   toast(msg);
+  // 團購連動：這批新建的單如果帶有團購訂單編號，回報為已結帳
+  if(typeof gbReportOrderPaid==="function"){ state.sales.filter(o=>o.batchId===batchId).forEach(o=>gbReportOrderPaid(o)); }
 }
 function gbBatchesList(){
   const map={};
@@ -4191,6 +4309,7 @@ function syncSettingsUI(){
   if($("#setAdminPass")){ $("#setAdminPass").value=state.adminPass||"0000"; $("#setStaffPass").value=state.staffPass||"1234"; }
   if($("#setGeminiKey")){ $("#setGeminiKey").value=state.geminiKey||""; $("#setGeminiModel").value=state.geminiModel||"gemini-flash-latest"; }
   if($("#syncUrl")){ const c=loadSyncCfg()||{}; $("#syncUrl").value=c.url||""; $("#syncKey").value=c.key||""; $("#syncEmail").value=c.email||""; $("#syncPass").value=c.password||""; }
+  if($("#gbDbUrl")){ const g=loadGbDbCfg()||{}; $("#gbDbUrl").value=g.url||""; $("#gbDbKey").value=g.key||""; $("#gbAutoPicked").checked=!!g.autoPicked; }
 }
 
 /* ============================================================
@@ -4243,6 +4362,8 @@ function applyRoleVisibility(){
       : `${emp?esc(emp.name):"店鋪人員"}<span class="role-pill staff">${emp?esc(emp.id):"門市"}</span>`;
     $("#authWho").innerHTML = who;
   }
+  if($("#settingsBtn")) $("#settingsBtn").style.display = (currentRole==="admin") ? "" : "none";
+  if(currentRole!=="admin" && $("#settingsBg")) $("#settingsBg").classList.remove("show");
   if(typeof refreshStaffSelect==="function") refreshStaffSelect();
 }
 function doLogin(){
@@ -4276,6 +4397,8 @@ function doLogout(){
   $("#loginOverlay").classList.add("show");
   if($("#authBox")) $("#authBox").style.display="none";
   if($("#onbFab")) $("#onbFab").style.display="none";
+  if($("#settingsBtn")) $("#settingsBtn").style.display="none";
+  if($("#settingsBg")) $("#settingsBg").classList.remove("show");
   if(typeof toggleOnbPanel==="function") toggleOnbPanel(false);
   setTimeout(()=>$("#loginUser").focus(),60);
 }
@@ -4644,6 +4767,9 @@ function bindEvents(){
   $("#loginPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
   $("#loginUser").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#loginPass").focus(); });
   $("#logoutBtn").addEventListener("click",doLogout);
+  $("#settingsBtn").addEventListener("click",()=>{ syncSettingsUI(); $("#settingsBg").classList.add("show"); });
+  $("#settingsClose").addEventListener("click",()=>$("#settingsBg").classList.remove("show"));
+  $("#settingsBg").addEventListener("click",e=>{ if(e.target.id==="settingsBg") $("#settingsBg").classList.remove("show"); });
   // 人事
   $("#stAdd").addEventListener("click",()=>{
     const name=$("#stName").value.trim(); if(!name){ toast("請輸入姓名"); return; }
@@ -4817,6 +4943,7 @@ function bindEvents(){
   $("#m_photoBtn").addEventListener("click",()=>$("#m_photoInput").click());
   $("#m_photoInput").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) photoIdentify(f); e.target.value=""; });
   $("#saveGemini").addEventListener("click",saveGeminiSettings);
+  $("#saveGbDb").addEventListener("click",saveGbDbSettings);
   $("#syncConnect").addEventListener("click",saveSyncSettings);
   $("#syncDisconnect").addEventListener("click",disconnectSync);
   $("#lowStockBannerGo").addEventListener("click",()=>{ switchView("purchase"); $("#lowStockBanner").style.display="none"; });
@@ -4969,6 +5096,7 @@ function bindEvents(){
   });
   $("#gbSheet").addEventListener("change",e=>gbLoadSheet(e.target.value));
   $("#gbBuild").addEventListener("click",gbBuild);
+  $("#gbMember").addEventListener("change",()=>{ if(gbParsed.length) renderGbPreview(); });
   $("#gbCommit").addEventListener("click",gbCommit);
   $("#gbPreviewBody").addEventListener("change",e=>{
     if(!e.target.classList.contains("gb-map")) return;
@@ -5394,6 +5522,20 @@ function saveGeminiSettings(){
   if("serviceWorker" in navigator){
     navigator.serviceWorker.register("sw.js").catch(()=>{});
   }
+  // iOS Safari：鍵盤開啟時 position:fixed 底欄會浮到畫面中間。
+  // 對策：輸入框聚焦（＝鍵盤開啟）就隱藏底欄，失焦／視窗高度恢復就顯示回來。
+  (function(){
+    const kbOpen=v=>document.body.classList.toggle("kb-open",!!v);
+    const isTextInput=el=>el && el.matches && el.matches('input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea');
+    document.addEventListener("focusin",e=>{ if(isTextInput(e.target)) kbOpen(true); });
+    document.addEventListener("focusout",()=>{ setTimeout(()=>{ if(!isTextInput(document.activeElement)) kbOpen(false); },150); });
+    if(window.visualViewport){
+      visualViewport.addEventListener("resize",()=>{
+        // 鍵盤收起後可視高度會恢復到接近整個視窗 → 強制復位
+        if(visualViewport.height >= window.innerHeight*0.85) kbOpen(false);
+      });
+    }
+  })();
 })();
 </script>
 </body>
