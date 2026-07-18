@@ -1482,6 +1482,7 @@
     <div class="set-sec">
       <h4>☁️ 多裝置雲端同步（手機／電腦共用）</h4>
       <p class="hint">設定後，手機與電腦會共用同一份資料——手機建檔、電腦結帳都看得到。需要一組免費 Supabase 專案。狀態：<b id="syncStatus" style="color:var(--muted)">未連線</b></p>
+      <div id="syncUsage" class="hint" style="margin:-4px 0 10px;padding:8px 10px;border-radius:8px;background:var(--surface-2);display:none"></div>
       <div class="field"><label>Supabase 專案網址</label><input id="syncUrl" type="text" autocomplete="off" placeholder="https://xxxx.supabase.co"></div>
       <div class="field"><label>API 金鑰（anon / publishable）</label><input id="syncKey" type="text" autocomplete="off" placeholder="sb_publishable_... 或 eyJ..."></div>
       <div class="field"><label>同步帳號（Email）</label><input id="syncEmail" type="text" autocomplete="off" placeholder="shop@example.com"></div>
@@ -1781,6 +1782,7 @@ async function startSync(silent){
     syncOn=true; setSyncStatus("on");
     clearInterval(syncTimer); syncTimer=setInterval(syncTick, 4000);
     if(!silent) toast("雲端同步已啟動");
+    renderSyncUsage(); checkCloudUsage(true);
   }catch(e){ syncOn=false; setSyncStatus("error", (e.message||"連線失敗")); if(!silent) toast("連線失敗："+(e.message||e)); }
 }
 function stopSync(){ syncOn=false; clearInterval(syncTimer); clearTimeout(pushTimer); setSyncStatus("off"); }
@@ -1791,6 +1793,68 @@ function saveSyncSettings(){
   stopSync(); startSync(false);
 }
 function disconnectSync(){ if(syncCfg){ syncCfg.enabled=false; saveSyncCfg(syncCfg); } stopSync(); toast("已停用雲端同步（本機資料保留）"); }
+
+/* ============================================================
+   雲端資料庫用量顯示（Supabase 免費方案上限 500MB，超過會變唯讀）
+============================================================ */
+const SYNC_FREE_LIMIT = 500*1024*1024; // 500 MB
+let lastUsageWarnAt = 0;
+function fmtBytes(n){
+  n=Number(n)||0;
+  if(n>=1024*1024) return (n/1024/1024).toFixed(1)+" MB";
+  if(n>=1024) return (n/1024).toFixed(0)+" KB";
+  return n+" B";
+}
+function localDataSize(){
+  try{ return new Blob([JSON.stringify(state)]).size; }catch(e){ try{ return (JSON.stringify(state)||"").length; }catch(_){ return 0; } }
+}
+// 向 Supabase 取整個資料庫大小（需要一個 get_db_size RPC；沒有就回 null）
+async function syncFetchDbSize(){
+  const c=syncCfg||loadSyncCfg();
+  if(!c || !c.url || !c.key) return null;
+  const url=c.url.replace(/\/$/,"")+"/rest/v1/rpc/get_db_size";
+  try{
+    let res=await fetch(url,{ method:"POST", headers:{ "Content-Type":"application/json", "apikey":c.key, "Authorization":"Bearer "+(syncToken||c.key) }, body:"{}" });
+    if(res.status===401 && typeof syncLogin==="function"){ try{ await syncLogin(); res=await fetch(url,{ method:"POST", headers:{ "Content-Type":"application/json", "apikey":c.key, "Authorization":"Bearer "+syncToken }, body:"{}" }); }catch(e){} }
+    if(!res.ok) return null;
+    const v=await res.json();
+    const raw=Array.isArray(v)?v[0]:v;
+    if(raw==null || raw==="") return null;
+    const n=Number(raw);
+    return isNaN(n)?null:n;
+  }catch(e){ return null; }
+}
+async function renderSyncUsage(){
+  const box=$("#syncUsage"); if(!box) return;
+  const c=syncCfg||loadSyncCfg();
+  if(!c || !c.url || !c.key){ box.style.display="none"; return; }
+  box.style.display="block";
+  const localTxt="本機這份資料約 "+fmtBytes(localDataSize());
+  const dbSize=await syncFetchDbSize();
+  if(dbSize==null){
+    box.innerHTML=localTxt+"<br><span style='color:var(--muted)'>（雲端總用量需要一個小設定才能顯示，見下方說明）</span>";
+    return;
+  }
+  const pct=Math.min(100, dbSize/SYNC_FREE_LIMIT*100);
+  const remain=Math.max(0, SYNC_FREE_LIMIT-dbSize);
+  let color="var(--ok)", warn="";
+  if(pct>=80){ color="var(--price)"; warn="<br><b style='color:var(--price)'>⚠ 空間快滿了，請盡快到上方「備份」下載一份，並考慮清理舊資料。超過 500MB 後雲端會變成唯讀、同步會失敗。</b>"; }
+  else if(pct>=60){ color="var(--warn)"; warn="<br><span style='color:var(--warn)'>用量偏高，建議先備份一份保平安。</span>"; }
+  box.innerHTML=
+    "雲端資料庫用量 <b style='color:"+color+"'>"+fmtBytes(dbSize)+" / 500 MB（"+pct.toFixed(pct<10?1:0)+"%）</b>"+
+    "　剩餘 "+fmtBytes(remain)+"<br>"+
+    "<span style='color:var(--muted)'>"+localTxt+"　·　免費方案無自動備份，重要資料請自行備份</span>"+warn;
+}
+// 連線後主動檢查一次，太高就跳提醒（每小時最多提醒一次）
+async function checkCloudUsage(silent){
+  const dbSize=await syncFetchDbSize();
+  if(dbSize==null) return;
+  const pct=dbSize/SYNC_FREE_LIMIT*100;
+  if(pct>=80 && Date.now()-lastUsageWarnAt>3600000){
+    lastUsageWarnAt=Date.now();
+    toast("⚠ 雲端空間已用 "+pct.toFixed(0)+"%，請盡快備份（超過 500MB 同步會失效）");
+  }
+}
 
 /* ============================================================
    團購頁連動：ERP 結帳後回報「已結帳」，解除團購頁的「請先結帳」
@@ -4767,7 +4831,7 @@ function bindEvents(){
   $("#loginPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
   $("#loginUser").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#loginPass").focus(); });
   $("#logoutBtn").addEventListener("click",doLogout);
-  $("#settingsBtn").addEventListener("click",()=>{ syncSettingsUI(); $("#settingsBg").classList.add("show"); });
+  $("#settingsBtn").addEventListener("click",()=>{ syncSettingsUI(); $("#settingsBg").classList.add("show"); if(typeof renderSyncUsage==="function") renderSyncUsage(); });
   $("#settingsClose").addEventListener("click",()=>$("#settingsBg").classList.remove("show"));
   $("#settingsBg").addEventListener("click",e=>{ if(e.target.id==="settingsBg") $("#settingsBg").classList.remove("show"); });
   // 人事
