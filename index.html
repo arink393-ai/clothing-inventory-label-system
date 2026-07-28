@@ -847,6 +847,24 @@
       </div>
       <p class="hint" style="margin-top:8px">變更後立即生效，下次登入請使用新密碼。密碼會隨「備份」一起保存。</p>
     </div>
+
+    <div class="panel">
+      <h2><span class="num">安全</span>自動備份與自動鎖定</h2>
+      <p class="sub">保護資料不遺失、保護共用電腦不被他人操作。建議兩項都開啟。</p>
+      <div class="settings" style="flex-direction:column;align-items:flex-start;gap:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input id="setAutoBackup" type="checkbox">
+          <span><b>每日自動備份</b>　每天開啟系統時，自動下載一份 .json 備份到電腦（每天最多一次、有新交易才存）</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input id="setAutoLock" type="checkbox">
+          <span><b>自動鎖定</b>　關閉系統後重新開啟需再次輸入密碼；閒置
+            <input id="setAutoLockMins" type="number" min="1" max="120" style="width:64px"> 分鐘後自動登出</span>
+        </label>
+        <button class="btn primary" id="saveSecurity">儲存安全設定</button>
+      </div>
+      <p class="hint" style="margin-top:8px">自動備份檔會存到瀏覽器的「下載」資料夾，檔名為「進銷存自動備份_日期.json」。自動鎖定關閉時，系統會記住登入狀態、下次開啟免再輸入密碼（適合單人專用電腦）。</p>
+    </div>
   </section>
 
   <!-- ============ 進貨 ============ -->
@@ -1644,6 +1662,10 @@ let state = {
   lastBackup: null,
   backupAtCount: 0,
   autoReceipt: true,
+  autoBackup: true,       // 每日自動下載一份備份
+  lastAutoBackupDay: "",  // 上次自動備份的日期（YYYY-MM-DD），每天最多一次
+  autoLock: false,        // 自動鎖定：關閉重開需重新登入 + 閒置自動登出
+  autoLockMins: 10,       // 閒置幾分鐘後自動登出
 };
 let storageOK = true;
 let editingCode = null; // null=新增，否則為編輯中的編號
@@ -2633,7 +2655,7 @@ function isBackupDue(){
   const newTxns = txnCount() - (state.backupAtCount||0);
   if(!state.lastBackup) return txnCount()>0;          // 有交易卻從未備份
   const days = (Date.now()-state.lastBackup)/86400000;
-  return days>=7 || newTxns>=20;
+  return days>=1 || newTxns>=20;
 }
 let backupSnoozed=false;
 function checkBackupReminder(){
@@ -2668,6 +2690,38 @@ async function backupJson(){
     return false;
   }catch(e){ toast("備份失敗："+(e.message||e)); return false; }
 }
+/* 靜默直接下載（不跳分享對話框），供每日自動備份使用 */
+function downloadBlobDirect(blob, filename){
+  try{
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=filename; a.style.display="none";
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ a.remove(); URL.revokeObjectURL(url); }, 4000);
+    return true;
+  }catch(e){ return false; }
+}
+/* 每日自動備份：登入後每天最多自動下載一次，且僅在有新交易時 */
+async function maybeAutoBackup(){
+  try{
+    if(state.autoBackup===false) return;
+    if(!currentRole) return;
+    if(txnCount()<=0) return;
+    const today=todayStr();
+    if(state.lastAutoBackupDay===today) return;
+    const newTxns=txnCount()-(state.backupAtCount||0);
+    if(state.lastBackup && newTxns<=0){ state.lastAutoBackupDay=today; saveState(); return; }
+    const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+    const ok=downloadBlobDirect(blob, "進銷存自動備份_"+today+".json");
+    if(ok){
+      state.lastBackup=Date.now(); state.backupAtCount=txnCount(); state.lastAutoBackupDay=today; backupSnoozed=false;
+      saveState();
+      if($("#lastBackupInfo")) $("#lastBackupInfo").textContent=lastBackupText();
+      checkBackupReminder();
+      toast("已自動下載今日備份檔");
+    }
+  }catch(e){ /* 自動備份失敗不影響使用，仍有提醒橫幅作後盾 */ }
+}
 function restoreJson(file){
   const reader=new FileReader();
   reader.onload=e=>{
@@ -2700,6 +2754,10 @@ function restoreJson(file){
         if(state.pointValue==null) state.pointValue=1;
         if(state.lowStock==null) state.lowStock=3;
         if(state.backupAtCount==null) state.backupAtCount=0;
+        if(state.autoBackup==null) state.autoBackup=true;
+        if(state.lastAutoBackupDay==null) state.lastAutoBackupDay="";
+        if(state.autoLock==null) state.autoLock=false;
+        if(state.autoLockMins==null) state.autoLockMins=10;
         state.products.forEach(p=>{ if(p.stock==null) p.stock=0; if(p.cost==null) p.cost=0; if(p.bulkQty==null) p.bulkQty=0; if(p.bulkPrice==null) p.bulkPrice=0; if(p.promoType==null) p.promoType=(p.bulkQty>0?'bulk':'none'); if(p.secondPercent==null) p.secondPercent=50; if(p.bogoBuy==null) p.bogoBuy=1; if(p.bogoFree==null) p.bogoFree=1; if(p.consignor==null) p.consignor=''; if(p.consignRate==null) p.consignRate=0; if(!Array.isArray(p.variants)) p.variants=[]; if(p.variants.length) recomputeStock(p); if(p.desc==null) p.desc=''; });
         saveState(); syncSettingsUI(); renderAll();
         if($("#lastBackupInfo")) $("#lastBackupInfo").textContent=lastBackupText();
@@ -4250,6 +4308,18 @@ function savePass(){
   if(!a||!s){ toast("密碼不可空白"); return; }
   state.adminPass=a; state.staffPass=s; saveState(); toast("已更新登入密碼，下次登入生效");
 }
+/* ---------- 安全設定：自動備份 / 自動鎖定 ---------- */
+function saveSecurityOpts(){
+  state.autoBackup = $("#setAutoBackup").checked;
+  state.autoLock = $("#setAutoLock").checked;
+  const m = parseInt($("#setAutoLockMins").value)||10;
+  state.autoLockMins = Math.max(1, Math.min(120, m));
+  saveState();
+  // 立即套用登入記憶位置（切換自動鎖定時，把目前登入狀態搬到正確的儲存區）
+  if(currentRole) persistLoginRole(currentRole, currentStaffId);
+  resetIdleTimer();
+  toast("已更新安全設定");
+}
 
 /* ---------- 月報 + 暢銷/退貨率 ---------- */
 let reportMode="daily", reportMonth=null;
@@ -4372,6 +4442,8 @@ function syncSettingsUI(){
   if($("#lowStockInput")) $("#lowStockInput").value=state.lowStock;
   if($("#setAdminPass")){ $("#setAdminPass").value=state.adminPass||"0000"; $("#setStaffPass").value=state.staffPass||"1234"; }
   if($("#setGeminiKey")){ $("#setGeminiKey").value=state.geminiKey||""; $("#setGeminiModel").value=state.geminiModel||"gemini-flash-latest"; }
+  if($("#setAutoBackup")) $("#setAutoBackup").checked = state.autoBackup!==false;
+  if($("#setAutoLock")){ $("#setAutoLock").checked = !!state.autoLock; $("#setAutoLockMins").value = state.autoLockMins||10; }
   if($("#syncUrl")){ const c=loadSyncCfg()||{}; $("#syncUrl").value=c.url||""; $("#syncKey").value=c.key||""; $("#syncEmail").value=c.email||""; $("#syncPass").value=c.password||""; }
   if($("#gbDbUrl")){ const g=loadGbDbCfg()||{}; $("#gbDbUrl").value=g.url||""; $("#gbDbKey").value=g.key||""; $("#gbAutoPicked").checked=!!g.autoPicked; }
 }
@@ -4389,6 +4461,25 @@ const ROLE_KEY = "fashion_erp_role";
 const STAFF_KEY = "fashion_erp_staffid";
 let currentRole = null;
 let currentStaffId = "";
+/* ---------- 自動鎖定：閒置自動登出 ---------- */
+let idleTimer=null;
+function idleLockMs(){ return Math.max(1, parseInt(state.autoLockMins)||10)*60000; }
+function resetIdleTimer(){
+  clearTimeout(idleTimer);
+  if(!state.autoLock || !currentRole) return;
+  idleTimer=setTimeout(()=>{
+    if(currentRole){ doLogout(); toast("閒置過久，已自動登出，請重新登入"); }
+  }, idleLockMs());
+}
+/* 依「自動鎖定」設定，決定登入狀態記在哪：開→sessionStorage(關閉即失效)，關→localStorage(永久記住) */
+function persistLoginRole(role, staffId){
+  try{
+    localStorage.removeItem(ROLE_KEY); localStorage.removeItem(STAFF_KEY);
+    sessionStorage.removeItem(ROLE_KEY); sessionStorage.removeItem(STAFF_KEY);
+    const store = state.autoLock ? sessionStorage : localStorage;
+    store.setItem(ROLE_KEY, role); store.setItem(STAFF_KEY, staffId||"");
+  }catch(e){}
+}
 function refreshStaffSelect(){
   const sel=$("#soStaff"); if(!sel) return;
   const cur=sel.value;
@@ -4445,7 +4536,7 @@ function doLogin(){
   }
   if(!role){ $("#loginErr").style.display="block"; return; }
   currentRole=role; currentStaffId=staffId;
-  try{ localStorage.setItem(ROLE_KEY, role); localStorage.setItem(STAFF_KEY, staffId||""); }catch(e){}
+  persistLoginRole(role, staffId);
   $("#loginErr").style.display="none";
   $("#loginPass").value="";
   $("#loginOverlay").classList.remove("show");
@@ -4453,10 +4544,13 @@ function doLogin(){
   checkLowStockReminder();
   checkFirstLoginPasswordPrompt();
   initOnboardingWidget();
+  resetIdleTimer();
+  maybeAutoBackup();
 }
 function doLogout(){
   currentRole=null; currentStaffId="";
-  try{ localStorage.removeItem(ROLE_KEY); localStorage.removeItem(STAFF_KEY); }catch(e){}
+  clearTimeout(idleTimer);
+  try{ localStorage.removeItem(ROLE_KEY); localStorage.removeItem(STAFF_KEY); sessionStorage.removeItem(ROLE_KEY); sessionStorage.removeItem(STAFF_KEY); }catch(e){}
   $("#loginUser").value=""; $("#loginPass").value="";
   $("#loginOverlay").classList.add("show");
   if($("#authBox")) $("#authBox").style.display="none";
@@ -5320,6 +5414,10 @@ function bindEvents(){
   // 備份提醒
   $("#backupNow").addEventListener("click",backupJson);
   $("#backupLater").addEventListener("click",()=>{ backupSnoozed=true; $("#backupBar").style.display="none"; });
+  // 安全設定（自動備份 / 自動鎖定）
+  if($("#saveSecurity")) $("#saveSecurity").addEventListener("click",saveSecurityOpts);
+  // 閒置自動登出：任何操作都重置計時器
+  ["click","keydown","mousemove","touchstart","scroll"].forEach(ev=>document.addEventListener(ev, resetIdleTimer, {passive:true}));
 }
 
 let modalVariants=[];
@@ -5565,13 +5663,21 @@ function saveGeminiSettings(){
   checkBackupReminder();
   document.getElementById("storageNote").style.display = storageOK ? "none":"flex";
   // 登入狀態
-  let savedRole=null; try{ savedRole=localStorage.getItem(ROLE_KEY); }catch(e){}
-  try{ currentStaffId=localStorage.getItem(STAFF_KEY)||""; }catch(e){}
+  let savedRole=null;
+  try{
+    savedRole = sessionStorage.getItem(ROLE_KEY);
+    if(!savedRole && !state.autoLock) savedRole = localStorage.getItem(ROLE_KEY);
+  }catch(e){}
+  try{
+    currentStaffId = sessionStorage.getItem(STAFF_KEY) || (state.autoLock ? "" : (localStorage.getItem(STAFF_KEY)||""));
+  }catch(e){}
   if(savedRole==="admin" || savedRole==="staff"){
     currentRole=savedRole; $("#loginOverlay").classList.remove("show"); applyRoleVisibility();
     checkLowStockReminder();
     checkFirstLoginPasswordPrompt();
     initOnboardingWidget();
+    resetIdleTimer();
+    maybeAutoBackup();
   }else{
     $("#loginOverlay").classList.add("show"); setTimeout(()=>$("#loginUser").focus(),80);
   }
