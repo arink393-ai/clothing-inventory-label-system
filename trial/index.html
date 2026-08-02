@@ -248,6 +248,15 @@
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
   .set-sec{border:1px solid var(--line);border-radius:10px;padding:13px 14px;margin-bottom:12px;background:var(--surface-2)}
+  .held-bar{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;margin-bottom:4px;-webkit-overflow-scrolling:touch}
+  .held-card{flex:0 0 auto;min-width:140px;max-width:190px;background:#fff;border:1px solid var(--line-strong);border-radius:10px;padding:8px 10px;box-shadow:0 2px 6px -4px rgba(0,0,0,.25)}
+  .held-card .hc-top{display:flex;align-items:center;gap:5px;font-weight:700;font-size:13px;margin-bottom:2px}
+  .held-card .hc-sub{font-size:11.5px;color:var(--muted);margin-bottom:7px}
+  .held-card .hc-btns{display:flex;gap:6px}
+  .held-card .hc-btns button{flex:1;border:none;border-radius:6px;padding:5px 0;font-size:12px;font-weight:700;cursor:pointer}
+  .held-card .hc-take{background:var(--stamp);color:#fff}
+  .held-card .hc-del{background:var(--surface-2);color:var(--muted);flex:0 0 34px}
+  .held-hint{flex:0 0 auto;align-self:center;font-size:12px;color:var(--muted);padding:0 4px}
   .trial-locked{position:relative;opacity:.72}
   .lock-badge{font-size:10px;margin-left:3px;vertical-align:top}
   .bnav-item .lock-badge{position:absolute;top:5px;right:calc(50% - 18px);margin:0}
@@ -700,7 +709,7 @@
 </div>
 
 <div id="trialBanner" style="display:none;background:linear-gradient(90deg,#0F6E63,#0B554C);color:#fff;padding:8px 16px;font-size:13px;align-items:center;gap:10px;justify-content:center;flex-wrap:wrap">
-  <span>🎁 <b>試用版</b>　可完整體驗建庫存與結帳；報表・會員・團購・雲端同步等進階功能需升級</span>
+  <span id="trialBannerText">🎁 <b>試用版</b>　可完整體驗建庫存與結帳；報表・會員・團購・雲端同步等進階功能需升級</span>
   <button type="button" id="trialUpgradeBtn" style="background:#fff;color:#0B554C;border:none;border-radius:999px;padding:4px 14px;font-size:12.5px;font-weight:700;cursor:pointer">升級正式版</button>
 </div>
 <div id="lowStockBanner" style="display:none;background:#fdf3e7;border-bottom:1px solid #e8cfa0;color:#7a4a10;padding:9px 16px;font-size:13.5px;align-items:center;gap:10px;justify-content:center;flex-wrap:wrap">
@@ -919,6 +928,7 @@
           相機掃描
         </button>
       </div>
+      <div class="held-bar" id="soHeldBar" style="display:none"></div>
       <div class="cart" id="soCart"></div>
       <div class="checkout">
         <div class="co-member" style="margin-bottom:8px">
@@ -960,6 +970,7 @@
         <div class="cart-foot">
           <div class="field" style="flex:1;min-width:160px"><label>備註（可空）</label><input id="soNote"></div>
           <label class="hint" style="display:inline-flex;align-items:center;gap:6px"><input type="checkbox" id="soAutoReceipt" class="checkbox" checked style="vertical-align:-3px"> 結帳後顯示收據</label>
+          <button class="btn" id="soHold">🅟 暫存這筆</button>
           <button class="btn primary lg" id="soSave">完成結帳</button>
         </div>
       </div>
@@ -1474,6 +1485,22 @@
   </div>
 </div>
 
+<!-- 試用到期封鎖畫面 -->
+<div id="trialExpiredBg" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(42,39,34,.92);align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--surface);border-radius:16px;max-width:400px;width:100%;padding:24px;text-align:center;box-shadow:0 30px 80px -20px rgba(0,0,0,.6)">
+    <div style="font-size:40px;margin-bottom:8px">⏳</div>
+    <h2 style="margin:0 0 8px">試用期已結束</h2>
+    <p class="hint" style="margin:0 0 16px">感謝試用！30 天免費試用已到期。升級正式版即可繼續使用、解鎖全部功能，你在試用期建立的資料都能完整帶入。</p>
+    <div style="background:#eef5f3;border:1px solid #cfe3dd;border-radius:10px;padding:12px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:6px">💾 別擔心，資料不會不見</div>
+      <div class="hint" style="margin:0 0 9px">先把資料備份下來，升級後用「還原」一鍵匯入。</div>
+      <button type="button" class="btn primary sm" id="trialExpBackup" style="width:100%">💾 備份我的資料</button>
+    </div>
+    <p style="margin:0 0 4px;font-weight:700">升級正式版</p>
+    <p class="hint" id="trialExpContact" style="margin:0"></p>
+  </div>
+</div>
+
 <!-- 試用版升級彈窗 -->
 <div class="modal-bg" id="trialBg">
   <div class="modal">
@@ -1484,18 +1511,20 @@
       <div class="hint" style="line-height:1.9;margin:0">
         ・商品建檔、分類、條碼、變體規格<br>
         ・結帳收銀（現金找零、折扣）<br>
+        ・會員集點與消費紀錄<br>
         ・掃碼查價、標籤列印<br>
-        ・最多 30 項商品
+        ・商品最多 100 項、會員最多 30 筆<br>
+        ・免費試用 30 天
       </div>
       <div style="font-weight:700;margin:12px 0 8px;color:var(--price)">🔒 升級正式版再解鎖</div>
       <div class="hint" style="line-height:1.9;margin:0">
-        ・無限商品數量<br>
+        ・無限商品與會員數量<br>
         ・銷售報表與毛利分析<br>
-        ・會員集點與消費紀錄<br>
         ・LINE 團購匯入・自動扣庫存<br>
         ・多裝置雲端同步（手機↔電腦）<br>
         ・員工人事・薪資・寄賣結算<br>
-        ・拍照 AI 自動命名
+        ・拍照 AI 自動命名<br>
+        ・永久使用（無 30 天限制）
       </div>
     </div>
     <p class="hint" style="text-align:center;margin-bottom:12px">想升級或了解方案，<b id="trialContact"></b></p>
@@ -1665,7 +1694,9 @@ const LOGO_SVG = `
 ======================================================== */
 const TRIAL_MODE = true;
 const TRIAL_MAX_PRODUCTS = 100;                             // 試用版商品上限
-const TRIAL_LOCKED_VIEWS = ["report","members","staff","consign"]; // 鎖住的功能頁
+const TRIAL_MAX_MEMBERS = 30;                               // 試用版會員上限
+const TRIAL_DAYS = 30;                                      // 試用天數（從首次開啟起算）
+const TRIAL_LOCKED_VIEWS = ["report","staff","consign"];   // 鎖住的功能頁（會員已開放，限 30 筆）
 const TRIAL_CONTACT = "LINE：arink393（裕臻）";          // ← 改成你的 LINE ID 或聯絡方式
 let _seedingNow = false;                                     // 種子資料匯入時暫時放行商品上限
 
@@ -1688,6 +1719,7 @@ let state = {
   adminPass: "0000",
   staffPass: "1234",
   gbMap: {},
+  heldSales: [],
   geminiKey: "",
   geminiModel: "gemini-flash-latest",
   shopName: "",
@@ -2063,6 +2095,7 @@ async function clearAllData(){
     geminiModel: state.geminiModel||"gemini-flash-latest",
     expenses: [], stocktakes: [], cashCounts: [],
     gbMap: {},
+    heldSales: [],
     lastBackup: state.lastBackup||null,
     backupAtCount: 0,
     seeded: true,
@@ -2090,6 +2123,7 @@ async function factoryReset(){
     expenses: [], stocktakes: [], cashCounts: [],
     adminPass: "0000", staffPass: "1234",
     gbMap: {}, geminiKey: "", geminiModel: "gemini-flash-latest",
+    heldSales: [],
     shopName: "", categories: DEFAULT_CATEGORIES.map(c=>({...c})),
     markup: 15, roundTo: 10, pointsPer: 100, pointValue: 1, lowStock: 3,
     lastBackup: null, backupAtCount: 0, autoReceipt: true,
@@ -3199,7 +3233,85 @@ function recalcCheckout(){
   }
   return {subtotal, promoDiscount, promoLabels:pr.labels, discount, redeem, total, earn, member:m, payment:soPayMethod, received: isCash?received:total, change: Math.max(0,change)};
 }
+/* ============================================================
+   暫存購物車（掛單）：多位客人同時逛，先各自暫存、之後叫回結帳
+============================================================ */
+function ensureHeld(){ if(!Array.isArray(state.heldSales)) state.heldSales=[]; return state.heldSales; }
+function clearCheckoutInputs(){
+  soCart=[];
+  if($("#soNote")) $("#soNote").value="";
+  if($("#soDiscount")) $("#soDiscount").value="0";
+  if($("#soRedeem")) $("#soRedeem").value="";
+  if($("#soReceived")) $("#soReceived").value="";
+  soMemberId="";
+  if($("#soMemberSearch")){ $("#soMemberSearch").value=""; const b=$("#soMemberResults"); if(b) b.style.display="none"; }
+}
+function holdCurrentSale(silent){
+  if(!soCart.length){ if(!silent) toast("購物車是空的，沒有可暫存的內容"); return false; }
+  ensureHeld();
+  const m=currentMember();
+  const firstName=soCart[0]?soCart[0].name:"";
+  const label = m ? m.name : (firstName ? (firstName.length>8?firstName.slice(0,8)+"…":firstName)+(soCart.length>1?" 等":"") : "訪客");
+  state.heldSales.push({
+    id:"H"+Date.now().toString(36),
+    label, ts:Date.now(),
+    cart:JSON.parse(JSON.stringify(soCart)),
+    memberId:soMemberId||"",
+    note:$("#soNote")?$("#soNote").value:"",
+    discount:$("#soDiscount")?$("#soDiscount").value:"0",
+    redeem:$("#soRedeem")?$("#soRedeem").value:""
+  });
+  clearCheckoutInputs();
+  saveState(); renderSoCart(); renderHeldSales();
+  if(!silent) toast("已暫存「"+label+"」，之後點卡片即可叫回結帳");
+  return true;
+}
+function restoreHeldSale(id){
+  ensureHeld();
+  const idx=state.heldSales.findIndex(h=>h.id===id); if(idx<0) return;
+  if(soCart.length){
+    if(!confirm("目前購物車還有商品。\n\n確定＝先把目前這筆也暫存起來，再叫回選的這筆；\n取消＝不動作。")) return;
+    holdCurrentSale(true);
+  }
+  const h=state.heldSales[idx];
+  soCart=JSON.parse(JSON.stringify(h.cart||[]));
+  if($("#soNote")) $("#soNote").value=h.note||"";
+  if($("#soDiscount")) $("#soDiscount").value=h.discount||"0";
+  if($("#soRedeem")) $("#soRedeem").value=h.redeem||"";
+  if($("#soReceived")) $("#soReceived").value="";
+  state.heldSales.splice(idx,1);
+  saveState();
+  if(h.memberId && state.members.find(x=>x.id===h.memberId)) selectSaleMember(h.memberId);
+  else { soMemberId=""; if($("#soMemberSearch")) $("#soMemberSearch").value=""; }
+  renderSoCart(); renderHeldSales();
+  toast("已叫回「"+(h.label||"暫存單")+"」，可繼續結帳");
+}
+function deleteHeldSale(id){
+  ensureHeld();
+  const h=state.heldSales.find(x=>x.id===id); if(!h) return;
+  if(!confirm("刪除暫存「"+(h.label||"")+"」？此暫存內容會清除（不影響庫存）。")) return;
+  state.heldSales=state.heldSales.filter(x=>x.id!==id);
+  saveState(); renderHeldSales();
+  toast("已刪除暫存");
+}
+function renderHeldSales(){
+  const bar=$("#soHeldBar"); if(!bar) return;
+  ensureHeld();
+  if(!state.heldSales.length){ bar.style.display="none"; bar.innerHTML=""; return; }
+  bar.style.display="flex";
+  bar.innerHTML='<span class="held-hint">暫存中 👉</span>'+state.heldSales.map(h=>{
+    const cnt=(h.cart||[]).reduce((s,i)=>s+i.qty,0);
+    const sub=(h.cart||[]).reduce((s,i)=>s+i.qty*i.price,0);
+    const t=new Date(h.ts||Date.now()); const hh=String(t.getHours()).padStart(2,"0"), mm=String(t.getMinutes()).padStart(2,"0");
+    return `<div class="held-card" data-id="${h.id}">
+      <div class="hc-top">🅟 ${esc(h.label||"暫存")}</div>
+      <div class="hc-sub">${cnt} 件・約 $${fmt(sub)}　${hh}:${mm}</div>
+      <div class="hc-btns"><button class="hc-take" data-take="${h.id}">叫回結帳</button><button class="hc-del" data-del="${h.id}" title="刪除">🗑</button></div>
+    </div>`;
+  }).join("");
+}
 function renderSoCart(){
+  if(typeof renderHeldSales==="function") renderHeldSales();
   const el=$("#soCart"); if(!el) return;
   if(soCart.length===0){ el.innerHTML=`<div class="empty2">購物車是空的。掃描商品條碼即可加入。</div>`; recalcCheckout(); return; }
   el.innerHTML=soCart.map((i,idx)=>{
@@ -3942,6 +4054,10 @@ function nextMemberId(){
 }
 function addMember(name,phone,pts,lineId){
   name=String(name||"").trim(); if(!name){ toast("請輸入會員姓名"); return null; }
+  if(TRIAL_MODE && (state.members||[]).length >= TRIAL_MAX_MEMBERS){
+    if(typeof showTrialUpgrade==="function") showTrialUpgrade("會員數量已達試用版上限（"+TRIAL_MAX_MEMBERS+" 筆）。升級正式版即可無限建立會員。");
+    return null;
+  }
   const m={ id:nextMemberId(), name, phone:String(phone||"").trim(), lineId:String(lineId||"").trim(), points:Math.max(0,parseInt(pts)||0), spent:0 };
   state.members.push(m); return m;
 }
@@ -3991,7 +4107,7 @@ function saveMemberModal(){
   const pts=Math.max(0,parseInt($("#me_pts").value)||0);
   let mid=null;
   if(editingMember){ const m=state.members.find(x=>x.id===editingMember); if(m){ m.name=nm; m.phone=phone; m.lineId=lineId; m.points=pts; mid=m.id; } }
-  else { const m=addMember(nm,phone,pts,lineId); mid=m?m.id:null; }
+  else { const m=addMember(nm,phone,pts,lineId); if(!m) return; mid=m.id; }
   saveState(); renderMembers(); refreshMemberSelect();
   if(mid && $("#soMemberSearch")){ selectSaleMember(mid); }
   const wasEdit=!!editingMember;
@@ -4493,6 +4609,7 @@ function applyRoleVisibility(){
   if(typeof refreshStaffSelect==="function") refreshStaffSelect();
 }
 function doLogin(){
+  if(typeof enforceTrialExpiry==="function" && enforceTrialExpiry()) return;
   const u=$("#loginUser").value.trim(), pw=$("#loginPass").value;
   const adminPw = state.adminPass || "0000";
   const staffPw = state.staffPass || "1234";
@@ -4538,12 +4655,57 @@ function showTrialUpgrade(msg){
   if($("#trialContact")) $("#trialContact").textContent = TRIAL_CONTACT;
   bg.classList.add("show");
 }
+/* ---------- 試用期倒數（從首次開啟起算 TRIAL_DAYS 天） ---------- */
+const TRIAL_START_KEY="erp_trial_start_v1";
+function trialStartDate(){
+  // 以 localStorage 與 state 兩處記錄，取較早者，避免清快取就重置
+  let ls=null; try{ ls=parseInt(localStorage.getItem(TRIAL_START_KEY)||"")||null; }catch(e){}
+  let st=(state && state.trialStart)?state.trialStart:null;
+  let start = Math.min(ls||Infinity, st||Infinity);
+  if(!isFinite(start)){ start=Date.now(); }        // 首次：現在起算
+  // 回寫兩處
+  try{ localStorage.setItem(TRIAL_START_KEY, String(start)); }catch(e){}
+  if(state){ state.trialStart=start; }
+  return start;
+}
+function trialDaysLeft(){
+  const start=trialStartDate();
+  const elapsed=Math.floor((Date.now()-start)/86400000);
+  return TRIAL_DAYS-elapsed;
+}
+function isTrialExpired(){ return trialDaysLeft()<=0; }
+function enforceTrialExpiry(){
+  if(!TRIAL_MODE) return false;
+  if(isTrialExpired()){
+    const bg=$("#trialExpiredBg");
+    if(bg){
+      if($("#trialExpContact")) $("#trialExpContact").textContent=TRIAL_CONTACT;
+      bg.style.display="flex";
+    }
+    // 封鎖登入與操作
+    const lo=$("#loginOverlay"); if(lo) lo.classList.remove("show");
+    return true;
+  }
+  return false;
+}
 function initTrialUI(){
-  // 橫幅
+  // 橫幅（含剩餘天數）
   const banner=$("#trialBanner"); if(banner) banner.style.display="flex";
+  const daysLeft=Math.max(0, trialDaysLeft());
+  const bt=$("#trialBannerText");
+  if(bt) bt.innerHTML='🎁 <b>試用版</b>・剩 <b>'+daysLeft+'</b> 天　商品上限 100・會員上限 30；報表・團購・雲端同步等需升級';
+  // 到期封鎖畫面的備份鈕
+  const eb=$("#trialExpBackup");
+  if(eb) eb.addEventListener("click",async ()=>{
+    eb.disabled=true; const old=eb.textContent; eb.textContent="備份中…";
+    const ok=await backupJson();
+    eb.disabled=false; eb.textContent=old;
+    if(ok) toast("已下載備份檔，升級正式版後用「還原」匯入即可");
+  });
   // 一鍵開始體驗（免打密碼，直接以管理員登入）
   const qb=$("#trialQuickBtn");
   if(qb) qb.addEventListener("click",()=>{
+    if(enforceTrialExpiry()) return;
     $("#loginUser").value="admin";
     $("#loginPass").value=state.adminPass||"0000";
     doLogin();
@@ -5269,6 +5431,11 @@ function bindEvents(){
   $("#soScan").addEventListener("keydown",e=>{ if(e.key==="Enter"){ soAddItem(e.target.value); e.target.value=""; } });
   $("#soScan").addEventListener("change",e=>{ const v=e.target.value.trim(); if(v && resolveCode(v)){ soAddItem(v); e.target.value=""; } });
   $("#soSave").addEventListener("click",saveSale);
+  $("#soHold").addEventListener("click",()=>holdCurrentSale(false));
+  $("#soHeldBar").addEventListener("click",e=>{
+    const take=e.target.closest("[data-take]"); if(take){ restoreHeldSale(take.dataset.take); return; }
+    const del=e.target.closest("[data-del]"); if(del){ deleteHeldSale(del.dataset.del); return; }
+  });
   // 團購匯入
   $("#gbParse").addEventListener("click",()=>{
     const paste=$("#gbPaste").value.trim();
@@ -5716,7 +5883,7 @@ function saveGeminiSettings(){
   if("serviceWorker" in navigator){
     navigator.serviceWorker.register("sw.js").catch(()=>{});
   }
-  if(TRIAL_MODE) initTrialUI();
+  if(TRIAL_MODE){ initTrialUI(); enforceTrialExpiry(); }
   // iOS Safari：鍵盤開啟時 position:fixed 底欄會浮到畫面中間。
   // 對策：輸入框聚焦（＝鍵盤開啟）就隱藏底欄，失焦／視窗高度恢復就顯示回來。
   (function(){
